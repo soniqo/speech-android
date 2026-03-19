@@ -1,0 +1,16 @@
+# Build
+.gradle/
+build/
+*.iml
+.idea/
+local.properties
+
+# ONNX Runtime (downloaded by setup.sh)
+/ort/
+
+# Native build artifacts
+.cxx/
+.externalNativeBuild/
+
+# macOS
+.DS_Store
