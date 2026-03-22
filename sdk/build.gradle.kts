@@ -1,6 +1,7 @@
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    id("maven-publish")
 }
 
 android {
@@ -43,6 +44,49 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
+}
+
+publishing {
+    publications {
+        register<MavenPublication>("release") {
+            groupId = "audio.soniqo"
+            artifactId = "speech"
+            version = findProperty("VERSION_NAME")?.toString() ?: "0.0.1"
+
+            afterEvaluate {
+                from(components["release"])
+            }
+
+            pom {
+                name.set("speech-android")
+                description.set("On-device speech SDK for Android — VAD, STT, TTS, noise cancellation")
+                url.set("https://github.com/soniqo/speech-android")
+                licenses {
+                    license {
+                        name.set("MIT")
+                        url.set("https://github.com/soniqo/speech-android/blob/main/LICENSE")
+                    }
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/soniqo/speech-android")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR") ?: ""
+                password = System.getenv("GITHUB_TOKEN") ?: ""
+            }
+        }
     }
 }
 
