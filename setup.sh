@@ -5,7 +5,7 @@ set -euo pipefail
 # Downloads ONNX Runtime and initializes the speech-core submodule.
 
 ORT_VERSION="1.19.0"
-ORT_URL="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-android-${ORT_VERSION}.aar"
+ORT_URL="https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/${ORT_VERSION}/onnxruntime-android-${ORT_VERSION}.aar"
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 ORT_DIR="${ROOT}/ort"
