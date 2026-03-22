@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.soniqo.speech.demo"
+    namespace = "audio.soniqo.speech.demo"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.soniqo.speech.demo"
+        applicationId = "audio.soniqo.speech.demo"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

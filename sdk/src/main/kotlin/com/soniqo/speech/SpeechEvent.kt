@@ -1,4 +1,4 @@
-package com.soniqo.speech
+package audio.soniqo.speech
 
 sealed class SpeechEvent {
     data object SessionCreated : SpeechEvent()

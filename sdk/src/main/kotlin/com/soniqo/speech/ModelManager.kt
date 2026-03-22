@@ -1,4 +1,4 @@
-package com.soniqo.speech
+package audio.soniqo.speech
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
@@ -21,10 +21,10 @@ object ModelManager {
         return listOf(
             // VAD (no quantized variant — already 2 MB)
             ModelFile("Silero-VAD-v5-ONNX", "silero-vad.onnx"),
-            // STT
-            ModelFile("Parakeet-TDT-0.6B-ONNX", "parakeet-encoder${suffix}.onnx"),
-            ModelFile("Parakeet-TDT-0.6B-ONNX", "parakeet-decoder-joint${suffix}.onnx"),
-            ModelFile("Parakeet-TDT-0.6B-ONNX", "vocab.json"),
+            // STT (v3 — multilingual, 114 languages)
+            ModelFile("Parakeet-TDT-v3-ONNX", "parakeet-encoder${suffix}.onnx"),
+            ModelFile("Parakeet-TDT-v3-ONNX", "parakeet-decoder-joint${suffix}.onnx"),
+            ModelFile("Parakeet-TDT-v3-ONNX", "vocab.json"),
             // TTS
             ModelFile("Kokoro-82M-ONNX", "kokoro${suffix}.onnx"),
             ModelFile("Kokoro-82M-ONNX", "vocab_index.json"),

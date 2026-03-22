@@ -94,10 +94,32 @@ std::vector<float> ParakeetStt::compute_mel(const float* audio, size_t length) {
         emphasized[i] = audio[i] - cfg_.pre_emphasis * audio[i - 1];
     }
 
-    return mel_spectrogram(
+    auto mel = mel_spectrogram(
         emphasized.data(), emphasized.size(),
         cfg_.sample_rate, cfg_.n_fft, cfg_.hop_length,
         cfg_.win_length, cfg_.num_mel_bins);
+
+    // Per-feature normalization (NeMo AudioToMelSpectrogramPreprocessor)
+    // mel layout: [num_mel_bins * num_frames], mel[m * num_frames + t]
+    int num_frames = static_cast<int>(mel.size() / cfg_.num_mel_bins);
+    if (num_frames > 1) {
+        for (int m = 0; m < cfg_.num_mel_bins; m++) {
+            float sum = 0, sq_sum = 0;
+            for (int t = 0; t < num_frames; t++) {
+                float v = mel[m * num_frames + t];
+                sum += v;
+                sq_sum += v * v;
+            }
+            float mean = sum / num_frames;
+            float var = sq_sum / num_frames - mean * mean;
+            float std = (var > 0) ? std::sqrt(var) : 1.0f;
+            for (int t = 0; t < num_frames; t++) {
+                mel[m * num_frames + t] = (mel[m * num_frames + t] - mean) / std;
+            }
+        }
+    }
+
+    return mel;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +212,7 @@ ParakeetStt::Result ParakeetStt::tdt_decode(
         static_cast<int64_t>(cfg_.decoder_hidden)
     };
 
-    int32_t prev_token = static_cast<int32_t>(cfg_.blank_id);
+    int64_t prev_token = static_cast<int64_t>(cfg_.blank_id);
     int64_t t = 0;
 
     while (t < enc_len) {
@@ -213,16 +235,16 @@ ParakeetStt::Result ParakeetStt::tdt_decode(
         const int64_t tok_shape[] = {1, 1};
         OrtValue* t_tok = nullptr;
         ort_check(api_, api_->CreateTensorWithDataAsOrtValue(
-            mem, &prev_token, sizeof(int32_t),
-            tok_shape, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32, &t_tok));
+            mem, &prev_token, sizeof(int64_t),
+            tok_shape, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &t_tok));
 
         // Target length: [1] = 1
-        int32_t tgt_len = 1;
+        int64_t tgt_len = 1;
         const int64_t tgt_len_shape[] = {1};
         OrtValue* t_tgt_len = nullptr;
         ort_check(api_, api_->CreateTensorWithDataAsOrtValue(
-            mem, &tgt_len, sizeof(int32_t),
-            tgt_len_shape, 1, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32, &t_tgt_len));
+            mem, &tgt_len, sizeof(int64_t),
+            tgt_len_shape, 1, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &t_tgt_len));
 
         // LSTM states
         OrtValue* t_h = nullptr;
@@ -235,8 +257,8 @@ ParakeetStt::Result ParakeetStt::tdt_decode(
             mem, c_state.data(), c_state.size() * sizeof(float),
             lstm_shape, 3, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &t_c));
 
-        // Run decoder_joint
-        const char* in_names[]  = {"encoder_outputs", "targets", "target_length",
+        // Run decoder_joint (v3 uses "prednet_lengths_orig" instead of "target_length")
+        const char* in_names[]  = {"encoder_outputs", "targets", "prednet_lengths_orig",
                                    "input_states_1", "input_states_2"};
         const char* out_names[] = {"outputs", "prednet_lengths",
                                    "output_states_1", "output_states_2"};
@@ -255,9 +277,9 @@ ParakeetStt::Result ParakeetStt::tdt_decode(
         int token_end = cfg_.vocab_size + 1;  // includes blank
 
         // Greedy argmax: token
-        int32_t best_token = 0;
+        int best_token = 0;
         float best_score = logits[0];
-        for (int32_t i = 1; i < token_end; i++) {
+        for (int i = 1; i < token_end; i++) {
             if (logits[i] > best_score) {
                 best_score = logits[i];
                 best_token = i;

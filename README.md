@@ -33,7 +33,7 @@ dependencyResolutionManagement {
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.soniqo:speech:0.1.0")
+    implementation("audio.soniqo:speech:0.1.0")
 }
 ```
 

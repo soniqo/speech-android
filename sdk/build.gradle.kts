@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.soniqo.speech"
+    namespace = "audio.soniqo.speech"
     compileSdk = 35
 
     defaultConfig {

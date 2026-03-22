@@ -1,4 +1,4 @@
-package com.soniqo.speech
+package audio.soniqo.speech
 
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -6,10 +6,13 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
 /**
- * On-device speech pipeline — VAD → STT → TTS with optional noise cancellation.
+ * On-device speech pipeline — VAD → STT → (LLM) → TTS with optional noise cancellation.
  *
- * Wraps speech-core (C++) via JNI.  All inference runs locally using
- * ONNX Runtime with NNAPI acceleration on Qualcomm Snapdragon / Samsung Exynos.
+ * Wraps speech-core (C++) via JNI. All local inference runs via ONNX Runtime with
+ * NNAPI acceleration on Qualcomm Snapdragon / Samsung Exynos.
+ *
+ * Set [SpeechConfig.llmApiKey] to enable full agent mode (STT → Claude → TTS).
+ * Without it the pipeline runs in echo mode (STT → TTS).
  *
  * Usage:
  * ```
@@ -54,11 +57,27 @@ class SpeechPipeline(private val config: SpeechConfig) : AutoCloseable {
         }
     }
 
+    private val llmBridge: LlmBridge? = config.llmApiKey?.let { key ->
+        LlmBridge(key, config.llmModel, config.systemPrompt)
+    }
+
+    private val llmCallback: NativeBridge.LlmCallback? = llmBridge?.let { bridge ->
+        object : NativeBridge.LlmCallback {
+            override fun chat(
+                roles: Array<String>, contents: Array<String>,
+                onTokenFnPtr: Long, tokenCtxPtr: Long,
+            ) = bridge.chat(roles, contents, onTokenFnPtr, tokenCtxPtr)
+
+            override fun cancel() = bridge.cancel()
+        }
+    }
+
     private var handle: Long = NativeBridge.nativeCreate(
         config.modelDir,
         config.useNnapi,
         config.precision == ModelPrecision.INT8,
         nativeCallback,
+        llmCallback,
     )
 
     val state: PipelineState

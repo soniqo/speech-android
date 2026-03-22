@@ -27,7 +27,7 @@ public:
         int num_dur_bins    = 5;
         int duration_bins[5] = {0, 1, 2, 3, 4};
         int total_logits    = 1030;   // vocab_size+1 + num_dur_bins
-        int first_text_token = 274;   // IDs 0-273 are special tokens
+        int first_text_token = 0;     // Only token 0 (<unk>) is special
     };
 
     struct Result {
