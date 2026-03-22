@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Run setup
+        run: ./setup.sh
+
+      - name: Build SDK
+        run: ./gradlew :sdk:assembleRelease
+
+      - name: Run unit tests
+        run: ./gradlew :sdk:testReleaseUnitTest
+
+      - name: Build demo APK
+        run: ./gradlew :app:assembleRelease
+
+      - name: Upload SDK AAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: speech-sdk-${{ github.ref_name }}
+          path: sdk/build/outputs/aar/sdk-release.aar
+
+      - name: Upload demo APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: speech-demo-${{ github.ref_name }}
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sdk/build/outputs/aar/sdk-release.aar
+            app/build/outputs/apk/release/app-release-unsigned.apk
+          generate_release_notes: true
