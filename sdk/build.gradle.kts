@@ -1,7 +1,7 @@
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
-    id("maven-publish")
+    id("com.vanniktech.maven.publish")
 }
 
 android {
@@ -45,49 +45,41 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
-
-    publishing {
-        singleVariant("release") {
-            withSourcesJar()
-        }
-    }
 }
 
-publishing {
-    publications {
-        register<MavenPublication>("release") {
-            groupId = "audio.soniqo"
-            artifactId = "speech"
-            version = findProperty("VERSION_NAME")?.toString() ?: "0.0.1"
+mavenPublishing {
+    coordinates("audio.soniqo", "speech", findProperty("VERSION_NAME")?.toString() ?: "0.0.1")
 
-            afterEvaluate {
-                from(components["release"])
-            }
+    pom {
+        name.set("speech-android")
+        description.set("On-device speech SDK for Android — VAD, STT, TTS, noise cancellation")
+        url.set("https://github.com/soniqo/speech-android")
+        inceptionYear.set("2026")
 
-            pom {
-                name.set("speech-android")
-                description.set("On-device speech SDK for Android — VAD, STT, TTS, noise cancellation")
-                url.set("https://github.com/soniqo/speech-android")
-                licenses {
-                    license {
-                        name.set("MIT")
-                        url.set("https://github.com/soniqo/speech-android/blob/main/LICENSE")
-                    }
-                }
+        licenses {
+            license {
+                name.set("MIT License")
+                url.set("https://github.com/soniqo/speech-android/blob/main/LICENSE")
             }
+        }
+
+        developers {
+            developer {
+                id.set("soniqo")
+                name.set("Soniqo")
+                url.set("https://soniqo.audio")
+            }
+        }
+
+        scm {
+            url.set("https://github.com/soniqo/speech-android")
+            connection.set("scm:git:git://github.com/soniqo/speech-android.git")
+            developerConnection.set("scm:git:ssh://git@github.com/soniqo/speech-android.git")
         }
     }
 
-    repositories {
-        maven {
-            name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/soniqo/speech-android")
-            credentials {
-                username = System.getenv("GITHUB_ACTOR") ?: ""
-                password = System.getenv("GITHUB_TOKEN") ?: ""
-            }
-        }
-    }
+    publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
+    signAllPublications()
 }
 
 dependencies {

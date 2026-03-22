@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   build:
@@ -43,11 +42,13 @@ jobs:
       - name: Build demo APK
         run: ./gradlew :app:assembleRelease
 
-      - name: Publish to GitHub Packages
-        run: ./gradlew :sdk:publishReleasePublicationToGitHubPackagesRepository -PVERSION_NAME=${{ steps.version.outputs.VERSION }}
+      - name: Publish to Maven Central
+        run: ./gradlew :sdk:publishAndReleaseToMavenCentral --no-configuration-cache -PVERSION_NAME=${{ steps.version.outputs.VERSION }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_ACTOR: ${{ github.actor }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.GPG_SIGNING_PASSWORD }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
