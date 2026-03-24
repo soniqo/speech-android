@@ -1,108 +1,113 @@
 # Speech Android
 
-On-device speech SDK for Android, powered by [ONNX Runtime](https://onnxruntime.ai) and [speech-core](https://github.com/soniqo/speech-core).
+On-device speech SDK for Android and embedded Linux, powered by [ONNX Runtime](https://onnxruntime.ai) and [speech-core](https://github.com/soniqo/speech-core).
 
-Speech recognition, text-to-speech, voice activity detection, and noise cancellation — all running locally on Android with NNAPI acceleration for Qualcomm Snapdragon and Samsung Exynos. No cloud APIs, no data leaves the device.
+Speech recognition (114 languages), text-to-speech, voice activity detection, and noise cancellation — all running locally. No cloud APIs, no data leaves the device.
 
 **[Models](https://huggingface.co/collections/aufklarer/speech-android-models-69bb8a156cac0b96a2247f26)** · **[speech-swift](https://github.com/soniqo/speech-swift)** (Apple counterpart) · **[speech-core](https://github.com/soniqo/speech-core)** (pipeline engine)
 
+## Platforms
+
+| Platform | API | Acceleration | Directory |
+|----------|-----|-------------|-----------|
+| Android | Kotlin (`SpeechPipeline`) | NNAPI (Snapdragon, Exynos, Tensor) | `sdk/` |
+| Embedded Linux | C (`speech.h`) | QNN (Hexagon DSP) | `linux/` |
+
 ## Models
 
-| Model | Task | INT8 Size | Latency | Languages |
-|-------|------|-----------|---------|-----------|
-| [Silero VAD v5](https://huggingface.co/aufklarer/Silero-VAD-v5-ONNX) | Voice activity detection | 2 MB | <1 ms / chunk | Any |
-| [Parakeet TDT 0.6B](https://huggingface.co/aufklarer/Parakeet-TDT-0.6B-ONNX) | Speech recognition | 661 MB | ~300 ms / utterance | 25 European |
-| [Kokoro 82M](https://huggingface.co/aufklarer/Kokoro-82M-ONNX) | Text-to-speech | 134 MB | ~200 ms / sentence | 8 |
-| [DeepFilterNet3](https://huggingface.co/aufklarer/DeepFilterNet3-ONNX) | Noise cancellation | ~8 MB | Real-time | Any |
+| Model | Task | INT8 Size | Languages |
+|-------|------|-----------|-----------|
+| [Parakeet TDT v3](https://huggingface.co/aufklarer/Parakeet-TDT-v3-ONNX) | Speech recognition | 891 MB | 114 |
+| [Kokoro 82M](https://huggingface.co/aufklarer/Kokoro-82M-ONNX) | Text-to-speech | 330 MB | English |
+| [Silero VAD v5](https://huggingface.co/aufklarer/Silero-VAD-v5-ONNX) | Voice activity detection | 2 MB | Any |
+| [DeepFilterNet3](https://huggingface.co/aufklarer/DeepFilterNet3-ONNX) | Noise cancellation | ~8 MB | Any |
 
-Models are downloaded automatically on first launch via `ModelManager`.
+Models are downloaded automatically on first launch (Android) or placed manually (Linux).
 
-## Quick Start
+## Android
 
-### 1. Add dependency
+### Add dependency
 
 ```kotlin
-// settings.gradle.kts
-dependencyResolutionManagement {
-    repositories {
-        google()
-        mavenCentral()
-        maven("https://jitpack.io")
-    }
-}
-
-// app/build.gradle.kts
 dependencies {
-    implementation("audio.soniqo:speech:0.1.0")
+    implementation("audio.soniqo:speech:0.0.1")
 }
 ```
 
-### 2. Download models
+### Usage
 
 ```kotlin
-val modelDir = ModelManager.ensureModels(context) { progress ->
-    Log.d("Speech", "Downloading ${progress.file}... ${progress.completed}/${progress.totalFiles}")
-}
-```
+val modelDir = ModelManager.ensureModels(context)
 
-### 3. Create pipeline
-
-```kotlin
 val pipeline = SpeechPipeline(
-    SpeechConfig(
-        modelDir = modelDir,
-        useNnapi = true,        // Qualcomm / Samsung NPU
-        precision = ModelPrecision.INT8,
-    )
+    SpeechConfig(modelDir = modelDir, useNnapi = true)
 )
 
-// Listen for events
-lifecycleScope.launch {
-    pipeline.events.collect { event ->
-        when (event) {
-            is SpeechEvent.SpeechStarted -> { /* user started talking */ }
-            is SpeechEvent.TranscriptionCompleted -> {
-                Log.d("Speech", "STT: ${event.text} (${event.sttMs.toInt()}ms)")
-            }
-            is SpeechEvent.ResponseAudioDelta -> { /* TTS audio chunk */ }
-            is SpeechEvent.ResponseDone -> pipeline.resumeListening()
-            else -> {}
-        }
+pipeline.events.collect { event ->
+    when (event) {
+        is SpeechEvent.TranscriptionCompleted -> println(event.text)
+        is SpeechEvent.ResponseDone -> pipeline.resumeListening()
+        else -> {}
     }
 }
 
 pipeline.start()
+
+// Feed 16kHz mono float32 PCM from microphone
+pipeline.pushAudio(samples)
 ```
 
-### 4. Feed microphone audio
+### Build from source
 
-```kotlin
-val audioRecord = AudioRecord(
-    MediaRecorder.AudioSource.MIC,
-    16000, // 16 kHz
-    AudioFormat.CHANNEL_IN_MONO,
-    AudioFormat.ENCODING_PCM_FLOAT,
-    bufferSize,
-)
+```bash
+git clone --recursive https://github.com/soniqo/speech-android.git
+cd speech-android
+./setup.sh
+./gradlew :app:assembleDebug
+./gradlew :sdk:connectedDebugAndroidTest   # 18 e2e tests
+```
 
-audioRecord.startRecording()
-val buffer = FloatArray(512) // 32ms chunks
-while (running) {
-    audioRecord.read(buffer, 0, 512, AudioRecord.READ_BLOCKING)
-    pipeline.pushAudio(buffer)
+## Embedded Linux
+
+Minimal C API for automotive and embedded platforms. See [`linux/README.md`](linux/README.md) for full documentation.
+
+### Usage
+
+```c
+#include <speech.h>
+
+void on_event(const speech_event_t* event, void* ctx) {
+    if (event->type == SPEECH_EVENT_TRANSCRIPTION)
+        printf("%s\n", event->text);
 }
+
+speech_config_t cfg = speech_config_default();
+cfg.model_dir = "/opt/speech/models";
+cfg.use_qnn = true;  // Hexagon DSP acceleration
+
+speech_pipeline_t p = speech_create(cfg, on_event, NULL);
+speech_start(p);
+speech_push_audio(p, pcm_samples, 512);
 ```
 
-### 5. Cleanup
+### Build
 
-```kotlin
-pipeline.stop()
-pipeline.close()
+```bash
+cd linux && ./setup_linux.sh
+cmake -B build -DORT_DIR=../ort-linux
+cmake --build build
+./build/speech_demo --model-dir /path/to/models
+```
+
+### Cross-compile for Yocto (SA8295P)
+
+```bash
+source /opt/poky/environment-setup-aarch64-poky-linux
+cmake -B build -DCMAKE_TOOLCHAIN_FILE=toolchain-aarch64.cmake -DORT_DIR=...
+cmake --build build
 ```
 
 ## Pipeline
-
-The speech pipeline is a state machine driven by voice activity detection:
 
 ```
 Idle → Listening → Transcribing → Speaking → Idle
@@ -110,32 +115,19 @@ Idle → Listening → Transcribing → Speaking → Idle
               └─── resumeListening() ───┘
 ```
 
-Events are emitted as a Kotlin `SharedFlow<SpeechEvent>`:
-
-| Event | When |
-|-------|------|
-| `SpeechStarted` | VAD detects speech onset |
-| `SpeechEnded` | VAD detects silence after speech |
-| `PartialTranscription` | Streaming STT partial result |
-| `TranscriptionCompleted` | Final transcription with confidence and latency |
-| `ResponseCreated` | TTS synthesis started |
-| `ResponseAudioDelta` | TTS audio chunk (PCM16 bytes) |
-| `ResponseDone` | TTS synthesis complete |
-| `ResponseInterrupted` | User interrupted (barge-in) |
-| `Error` | Pipeline error |
+Barge-in supported: speaking during TTS playback interrupts and starts a new transcription.
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────┐
-│              SpeechPipeline (Kotlin)          │
-│         events: SharedFlow<SpeechEvent>       │
+│   Android: SpeechPipeline (Kotlin/JNI)       │
+│   Linux:   speech.h (C API)                  │
 └──────────────────┬───────────────────────────┘
-                   │ JNI
+                   │
 ┌──────────────────┴───────────────────────────┐
 │            speech-core (C++ submodule)        │
-│   Turn detection · Interruption handling      │
-│   Conversation context · Tool calling         │
+│   Turn detection · Interruptions · Context   │
 └──┬────────┬────────┬────────┬────────────────┘
    │        │        │        │  vtables
 ┌──┴──┐  ┌──┴──┐  ┌──┴──┐  ┌─┴────────┐
@@ -143,58 +135,27 @@ Events are emitted as a Kotlin `SharedFlow<SpeechEvent>`:
 │Silero│  │Para-│  │Koko-│  │DeepFilter│
 │     │  │keet │  │ro   │  │Net3      │
 └──┬──┘  └──┬──┘  └──┬──┘  └─┬────────┘
-   │        │        │        │
    └────────┴────────┴────────┘
-         ONNX Runtime + NNAPI
+       ONNX Runtime (CPU / NNAPI / QNN)
 ```
-
-## Build from Source
-
-```bash
-git clone --recursive https://github.com/soniqo/speech-android.git
-cd speech-android
-./setup.sh          # Downloads ONNX Runtime + inits speech-core submodule
-./gradlew :app:assembleDebug
-```
-
-### Run tests
-
-```bash
-./gradlew :sdk:connectedDebugAndroidTest
-```
-
-18 e2e tests covering VAD, STT, TTS, noise cancellation, pipeline lifecycle, and concurrency.
 
 ## Hardware Acceleration
 
-| Chipset | Acceleration | EP |
-|---------|-------------|-----|
-| Qualcomm Snapdragon 8 Gen 1+ | Hexagon NPU | NNAPI |
-| Samsung Exynos 2200+ | Samsung NPU | NNAPI |
-| Google Tensor G2+ | Google TPU | NNAPI |
-| MediaTek Dimensity 9000+ | APU | NNAPI |
-| Other | CPU (XNNPACK) | Default |
-
-NNAPI is enabled by default via `SpeechConfig(useNnapi = true)`.
-
-## Configuration
-
-```kotlin
-SpeechConfig(
-    modelDir = modelDir,         // Path to downloaded models
-    useNnapi = true,             // Hardware acceleration
-    enableEnhancer = true,       // Noise cancellation before VAD
-    precision = ModelPrecision.INT8,  // INT8 (default) or FP32
-)
-```
+| Platform | Chipset | Acceleration |
+|----------|---------|-------------|
+| Android | Snapdragon 8 Gen 1+ | NNAPI → Hexagon NPU |
+| Android | Samsung Exynos 2200+ | NNAPI → Samsung NPU |
+| Android | Google Tensor G2+ | NNAPI → Google TPU |
+| Automotive | SA8295P / SA8255P | QNN → Hexagon DSP |
+| Any | CPU fallback | XNNPACK |
 
 ## Related
 
-| Repository | Platform | Description |
-|-----------|----------|-------------|
-| [speech-swift](https://github.com/soniqo/speech-swift) | Apple (macOS, iOS) | MLX + CoreML inference |
-| [speech-core](https://github.com/soniqo/speech-core) | Cross-platform | C++ pipeline engine |
-| **speech-android** | Android | ONNX Runtime inference |
+| Repository | Platform |
+|-----------|----------|
+| [speech-swift](https://github.com/soniqo/speech-swift) | Apple (macOS, iOS) — MLX + CoreML |
+| [speech-core](https://github.com/soniqo/speech-core) | Cross-platform C++ pipeline engine |
+| **speech-android** | Android + embedded Linux — ONNX Runtime |
 
 ## License
 
