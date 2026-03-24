@@ -176,9 +176,16 @@ ParakeetStt::Result ParakeetStt::transcribe(
     int64_t enc_len = enc_len_ptr[0];
     int64_t hidden  = (dim_count >= 3) ? enc_shape[1] : cfg_.encoder_hidden;
 
+    LOGI("STT: frames=%lld enc_len=%lld hidden=%lld audio=%zu enc_range=[%.4f,%.4f]",
+         num_frames, enc_len, hidden, length,
+         [&]{ float mn=encoded[0]; for(size_t i=1;i<(size_t)(hidden*enc_len);i++) if(encoded[i]<mn) mn=encoded[i]; return mn; }(),
+         [&]{ float mx=encoded[0]; for(size_t i=1;i<(size_t)(hidden*enc_len);i++) if(encoded[i]>mx) mx=encoded[i]; return mx; }());
+
     // --- TDT greedy decode ---
 
     auto result = tdt_decode(encoded, enc_len, hidden);
+
+    LOGI("STT: text='%.60s' conf=%.4f", result.text.c_str(), result.confidence);
 
     // --- cleanup ---
 

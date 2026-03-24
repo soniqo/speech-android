@@ -1,13 +1,19 @@
 #pragma once
 
 #include <onnxruntime_c_api.h>
-#include <android/log.h>
 #include <stdexcept>
 #include <string>
 
+#ifdef __ANDROID__
+#include <android/log.h>
 #define LOG_TAG "Speech"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#else
+#include <cstdio>
+#define LOGI(...) do { fprintf(stderr, "[speech] "); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n"); } while(0)
+#define LOGE(...) do { fprintf(stderr, "[speech ERROR] "); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n"); } while(0)
+#endif
 
 inline void ort_check(const OrtApi* api, OrtStatus* status) {
     if (status != nullptr) {
@@ -36,13 +42,21 @@ public:
         api_->SetIntraOpNumThreads(opts, 2);
 
         if (nnapi) {
+#ifdef __ANDROID__
             // NNAPI accelerates on Qualcomm Hexagon DSP / Samsung NPU
             const char* keys[] = {"nnapi_flags"};
             const char* values[] = {"0"};
             OrtStatus* s = api_->SessionOptionsAppendExecutionProvider(
                 opts, "NNAPI", keys, values, 1);
+#else
+            // QNN EP accelerates on Qualcomm Hexagon DSP (automotive/embedded)
+            const char* keys[] = {"backend_path"};
+            const char* values[] = {"libQnnHtp.so"};
+            OrtStatus* s = api_->SessionOptionsAppendExecutionProvider(
+                opts, "QNN", keys, values, 1);
+#endif
             if (s != nullptr) {
-                LOGI("NNAPI unavailable, using CPU");
+                LOGI("Hardware EP unavailable, using CPU");
                 api_->ReleaseStatus(s);
             }
         }
