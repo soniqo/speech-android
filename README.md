@@ -99,7 +99,7 @@ cmake --build build
 ./build/speech_demo --model-dir /path/to/models
 ```
 
-### Cross-compile for Yocto (SA8295P)
+### Cross-compile for Yocto
 
 ```bash
 source /opt/poky/environment-setup-aarch64-poky-linux
