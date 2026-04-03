@@ -4,7 +4,7 @@ On-device speech SDK for Android and embedded Linux, powered by [ONNX Runtime](h
 
 Speech recognition (114 languages), text-to-speech, voice activity detection, and noise cancellation — all running locally. No cloud APIs, no data leaves the device.
 
-**[Models](https://huggingface.co/collections/aufklarer/speech-android-models-69bb8a156cac0b96a2247f26)** · **[speech-swift](https://github.com/soniqo/speech-swift)** (Apple counterpart) · **[speech-core](https://github.com/soniqo/speech-core)** (pipeline engine)
+**[Models](https://huggingface.co/collections/aufklarer/speech-android-models-69bb8a156cac0b96a2247f26)** · **[Demo app](app/)** · **[speech-swift](https://github.com/soniqo/speech-swift)** (Apple counterpart) · **[speech-core](https://github.com/soniqo/speech-core)** (pipeline engine)
 
 ## Platforms
 
@@ -64,8 +64,29 @@ git clone --recursive https://github.com/soniqo/speech-android.git
 cd speech-android
 ./setup.sh
 ./gradlew :app:assembleDebug
-./gradlew :sdk:connectedDebugAndroidTest   # 18 e2e tests
+./gradlew :sdk:connectedDebugAndroidTest   # 23 e2e tests
 ```
+
+### Demo app
+
+The [`app/`](app/) module is a minimal voice assistant demo with:
+- Real-time VAD waveform visualization
+- Echo mode: transcribes speech and synthesizes it back (no LLM)
+- Chat bubble UI with STT/TTS latency display
+
+```bash
+./gradlew :app:installDebug
+```
+
+## Performance
+
+Measured on Android emulator (arm64-v8a, no NNAPI). Real hardware is significantly faster.
+
+| Model | Task | Audio | Inference | RTF |
+|-------|------|-------|-----------|-----|
+| Parakeet TDT v3 | STT | 1.5s | 175ms | 0.12 |
+| Kokoro 82M | TTS | 1.9s output | 1,075ms | 0.58 |
+| Silero VAD v5 | VAD | 32ms chunk | <1ms | <0.01 |
 
 ## Embedded Linux
 
@@ -97,6 +118,13 @@ cd linux && ./setup_linux.sh
 cmake -B build -DORT_DIR=../ort-linux
 cmake --build build
 ./build/speech_demo --model-dir /path/to/models
+```
+
+### Test
+
+```bash
+linux/tests/download_models.sh              # download ONNX models
+SPEECH_MODEL_DIR=tests/models ./build/speech_test   # 11 tests
 ```
 
 ### Cross-compile for Yocto

@@ -33,9 +33,10 @@ public:
     /// Pad token IDs to fixed length.
     std::vector<int64_t> pad(const std::vector<int64_t>& ids, int length);
 
-private:
     /// Convert text to IPA phoneme string.
     std::string text_to_phonemes(const std::string& text);
+
+private:
 
     std::string normalize_text(const std::string& text);
     std::vector<std::string> split_words(const std::string& text);

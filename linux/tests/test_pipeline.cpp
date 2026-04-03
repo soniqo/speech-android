@@ -93,6 +93,7 @@ static const char* find_model_dir() {
     static const char* paths[] = {
         "./models",
         "../models",
+        "../tests/models",
         "/opt/speech/models",
         nullptr
     };

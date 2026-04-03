@@ -54,6 +54,10 @@ void KokoroTts::synthesize(
     auto tokens = phonemizer_.tokenize(text);
     if (tokens.empty() || cancelled_) return;
 
+    auto phonemes = phonemizer_.text_to_phonemes(text);
+    LOGI("TTS: text='%.60s' phonemes='%.80s' tokens=%zu",
+         text, phonemes.c_str(), tokens.size());
+
     int64_t num_tokens = static_cast<int64_t>(tokens.size());
 
     // --- input tensors ---
@@ -102,7 +106,49 @@ void KokoroTts::synthesize(
         api_->GetTensorShapeElementCount(info, &num_elements);
         api_->ReleaseTensorTypeAndShapeInfo(info);
 
-        on_chunk(audio, num_elements, true, ctx);
+        // Trim trailing silence (padding from fixed-size model output)
+        const int frame_size = 240;  // 10ms at 24kHz
+        size_t valid_end = num_elements;
+        for (int i = static_cast<int>(num_elements) - frame_size; i > 0; i -= frame_size) {
+            float rms = 0;
+            for (int j = 0; j < frame_size && (i + j) < (int)num_elements; j++)
+                rms += audio[i + j] * audio[i + j];
+            rms = std::sqrt(rms / frame_size);
+            if (rms > 0.005f) {
+                valid_end = std::min(static_cast<size_t>(i + frame_size), num_elements);
+                break;
+            }
+        }
+
+        // Fade out last 5ms to prevent click
+        const size_t fade = std::min(static_cast<size_t>(120), valid_end);
+        for (size_t i = 0; i < fade; i++) {
+            audio[valid_end - fade + i] *= static_cast<float>(fade - i) / static_cast<float>(fade);
+        }
+
+        // Fade in first 5ms to prevent pop
+        const size_t fade_in = std::min(static_cast<size_t>(120), valid_end);
+        for (size_t i = 0; i < fade_in; i++) {
+            audio[i] *= static_cast<float>(i) / static_cast<float>(fade_in);
+        }
+
+        // Normalize
+        float peak = 0.0f;
+        for (size_t i = 0; i < valid_end; i++) {
+            float a = std::abs(audio[i]);
+            if (a > peak) peak = a;
+        }
+        float gain = (peak > 0.01f) ? (0.9f / peak) : 1.0f;
+        if (gain > 2.0f) gain = 2.0f;
+        if (gain > 1.01f) {
+            for (size_t i = 0; i < valid_end; i++)
+                audio[i] *= gain;
+        }
+
+        LOGI("TTS: samples=%zu valid=%zu peak=%.4f gain=%.1fx",
+             num_elements, valid_end, peak, gain);
+
+        on_chunk(audio, valid_end, true, ctx);
     }
 
     // --- cleanup ---

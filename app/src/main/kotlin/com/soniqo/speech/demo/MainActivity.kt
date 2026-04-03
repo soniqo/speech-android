@@ -38,6 +38,8 @@ class MainActivity : ComponentActivity() {
     private var audioTrack: AudioTrack? = null
     private var recording = false
     private val ttsBuffer = mutableListOf<ByteArray>()
+    private var lastTtsMs = 0f
+    private var speechStartTime = 0L
 
     private lateinit var statusView: TextView
     private lateinit var micButton: TextView
@@ -210,13 +212,15 @@ class MainActivity : ComponentActivity() {
                         when (event) {
                             is SpeechEvent.SpeechStarted -> {
                                 vadView.setSpeechActive(true)
-                                setStatus("speech detected")
+                                speechStartTime = System.currentTimeMillis()
+                                setStatus("listening...")
                                 setMicColor("#4CAF50")
                             }
 
                             is SpeechEvent.SpeechEnded -> {
                                 vadView.setSpeechActive(false)
-                                setStatus("processing...")
+                                val speechDur = System.currentTimeMillis() - speechStartTime
+                                setStatus("transcribing... (${"%.1f".format(speechDur / 1000f)}s)")
                                 setMicColor("#FF9800")
                             }
 
@@ -228,19 +232,38 @@ class MainActivity : ComponentActivity() {
 
                             is SpeechEvent.ResponseCreated -> {
                                 ttsBuffer.clear()
+                                try { java.io.File(filesDir, "tts_output.raw").delete() } catch (_: Exception) {}
                             }
 
                             is SpeechEvent.ResponseAudioDelta -> {
                                 ttsBuffer.add(event.audio)
+                                lastTtsMs = event.ttsMs
+                                // Save TTS audio for debugging
+                                try {
+                                    java.io.File(filesDir, "tts_output.raw").appendBytes(event.audio)
+                                } catch (_: Exception) {}
                             }
 
                             is SpeechEvent.ResponseDone -> {
-                                android.util.Log.i("Speech", "ResponseDone -> playing TTS + resuming")
+                                android.util.Log.i("Speech", "ResponseDone -> playing TTS")
+                                val totalBytes = ttsBuffer.sumOf { it.size }
+                                val durationSec = totalBytes / 2f / TTS_SAMPLE_RATE
+                                addSystemLine("tts: ${"%.0f".format(lastTtsMs)}ms → ${"%.1f".format(durationSec)}s audio")
+                                micPaused = true
+                                setStatus("speaking...")
+                                setMicColor("#FF9800")
                                 playTtsAudio()
-                                p.resumeListening()
-                                setStatus("listening")
-                                setMicColor("#4CAF50")
-                                android.util.Log.i("Speech", "ResponseDone -> resumed, state=${p.state}")
+                                // Resume after playback
+                                val delayMs = (durationSec * 1000).toLong() + 200
+                                lifecycleScope.launch {
+                                    kotlinx.coroutines.delay(delayMs)
+                                    stopAudioTrack()
+                                    micPaused = false
+                                    p.resumeListening()
+                                    setStatus("listening")
+                                    setMicColor("#4CAF50")
+                                    android.util.Log.i("Speech", "TTS done -> listening, state=${p.state}")
+                                }
                             }
 
                             is SpeechEvent.ResponseInterrupted -> {
@@ -297,7 +320,9 @@ class MainActivity : ComponentActivity() {
         }
         ttsBuffer.clear()
 
-        // Play with MODE_STATIC — load all audio then play
+        // Play with MODE_STREAM — write then drain
+        val minBuf = AudioTrack.getMinBufferSize(
+            TTS_SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val track = AudioTrack(
             AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -308,19 +333,24 @@ class MainActivity : ComponentActivity() {
                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                 .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                 .build(),
-            totalSize,
-            AudioTrack.MODE_STATIC,
+            maxOf(totalSize, minBuf),
+            AudioTrack.MODE_STREAM,
             AudioManager.AUDIO_SESSION_ID_GENERATE,
         )
-        val written = track.write(merged, 0, totalSize)
-        android.util.Log.i("Speech", "playTtsAudio: written=$written, playing...")
+        if (track.state != AudioTrack.STATE_INITIALIZED) {
+            android.util.Log.e("Speech", "playTtsAudio: AudioTrack not initialized!")
+            track.release()
+            return
+        }
         track.play()
         audioTrack = track
 
-        // Release after playback completes
-        val durationMs = (totalSize / 2).toLong() * 1000 / TTS_SAMPLE_RATE
         lifecycleScope.launch(Dispatchers.IO) {
-            kotlinx.coroutines.delay(durationMs + 100)
+            val written = track.write(merged, 0, totalSize)
+            android.util.Log.i("Speech", "playTtsAudio: written=$written/${totalSize}, playState=${track.playState}")
+            // Wait for playback to finish
+            val durationMs = (totalSize / 2).toLong() * 1000 / TTS_SAMPLE_RATE
+            kotlinx.coroutines.delay(durationMs + 200)
             stopAudioTrack()
         }
     }
@@ -393,8 +423,10 @@ class MainActivity : ComponentActivity() {
             while (recording) {
                 val read = audioRecord?.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING) ?: 0
                 if (read > 0) {
-                    p.pushAudio(buffer)
-                    val peak = buffer.take(read).maxOfOrNull { kotlin.math.abs(it) } ?: 0f
+                    if (!micPaused) {
+                        p.pushAudio(buffer)
+                    }
+                    val peak = if (micPaused) 0f else (buffer.take(read).maxOfOrNull { kotlin.math.abs(it) } ?: 0f)
                     if (peak > maxPeak) maxPeak = peak
                     vadView.addLevel(peak)
 
@@ -405,7 +437,7 @@ class MainActivity : ComponentActivity() {
                     recStream.write(bytes.array())
 
                     totalFrames += read
-                    if (totalFrames % 16000 == 0L) {
+if (totalFrames % 16000 == 0L) {
                         android.util.Log.i("Speech", "Mic: ${totalFrames/16000}s peak=${"%.4f".format(maxPeak)}")
                         maxPeak = 0f
                     }
@@ -421,6 +453,18 @@ class MainActivity : ComponentActivity() {
         audioRecord?.stop()
         audioRecord?.release()
         audioRecord = null
+    }
+
+    @Volatile private var micPaused = false
+
+    private fun pauseMicrophone() {
+        micPaused = true
+        android.util.Log.i("Speech", "Mic paused for TTS playback")
+    }
+
+    private fun resumeMicrophone() {
+        micPaused = false
+        android.util.Log.i("Speech", "Mic resumed after TTS playback")
     }
 
     // ---------------------------------------------------------------------------

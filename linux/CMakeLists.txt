@@ -21,8 +21,13 @@ target_compile_features(speech_core PUBLIC cxx_std_17)
 
 # --- ONNX Runtime ---
 add_library(onnxruntime SHARED IMPORTED)
+if(APPLE)
+    set(_ORT_LIB "${ORT_DIR}/lib/libonnxruntime.dylib")
+else()
+    set(_ORT_LIB "${ORT_DIR}/lib/libonnxruntime.so")
+endif()
 set_target_properties(onnxruntime PROPERTIES
-    IMPORTED_LOCATION "${ORT_DIR}/lib/libonnxruntime.so"
+    IMPORTED_LOCATION "${_ORT_LIB}"
     INTERFACE_INCLUDE_DIRECTORIES "${ORT_DIR}/include"
 )
 

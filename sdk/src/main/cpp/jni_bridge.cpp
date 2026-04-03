@@ -299,7 +299,8 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
 
         // Pipeline config
         sc_config_t config = sc_config_default();
-        config.min_silence_duration = 0.4f;  // 400ms — balance: avoid word splits, stay responsive
+        config.min_silence_duration = 0.6f;  // 600ms — avoid cutting on natural word pauses
+        config.eager_stt = false;              // wait for full silence confirmation
 
         if (h->llm) {
             // Full agent mode: STT → LLM → TTS

@@ -22,6 +22,35 @@ speech-android — on-device speech SDK for Android and embedded Linux (VAD + ST
 ./gradlew :sdk:connectedAndroidTest
 ```
 
+## Tests
+
+### Android (emulator or device)
+
+```bash
+./gradlew :sdk:connectedAndroidTest
+```
+
+Models download automatically via `ModelManager.ensureModels()`.
+23 tests across 5 suites: SileroVadTest, ParakeetSttTest, KokoroTtsTest, PipelineE2ETest, BargeInTest.
+
+### Linux
+
+```bash
+# 1. Download ONNX Runtime
+linux/setup_linux.sh
+
+# 2. Download test models
+linux/tests/download_models.sh
+
+# 3. Build
+cd linux && cmake -B build -DORT_DIR=../ort-linux && cmake --build build
+
+# 4. Run (set model dir)
+SPEECH_MODEL_DIR=tests/models ./build/speech_test
+```
+
+11 tests: config, lifecycle, speech detection, concurrency, null safety.
+
 ## Models
 
 ONNX models hosted on HuggingFace under `aufklarer/` org. INT8 is default.
@@ -48,3 +77,4 @@ ModelManager.kt handles download and caching.
 - Test on arm64-v8a (Snapdragon) as primary target
 - No Claude attribution in commits, PRs, or model cards
 - **Always ask for confirmation before creating a git commit**
+- **Run `/test` after making code changes** to C++, Kotlin, or CMake files
