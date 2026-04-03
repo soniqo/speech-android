@@ -108,6 +108,50 @@ class ParakeetSttTest {
     }
 
     @Test
+    fun sttDecodesBlankCorrectly() = runBlocking {
+        val config = SpeechConfig(modelDir = modelDir, useNnapi = false)
+        val pipeline = SpeechPipeline(config)
+        pipeline.start()
+
+        // Push pure silence — STT should not produce garbage text
+        val sr = 16000
+        val silence = FloatArray(sr * 3) // 3 seconds of silence
+
+        for (offset in silence.indices step 512) {
+            val end = minOf(offset + 512, silence.size)
+            val chunk = silence.sliceArray(offset until end)
+            if (chunk.size == 512) pipeline.pushAudio(chunk)
+        }
+
+        // Additional silence to ensure end-of-speech triggers if VAD fires
+        val trailing = FloatArray(sr * 2)
+        for (offset in trailing.indices step 512) {
+            val end = minOf(offset + 512, trailing.size)
+            val chunk = trailing.sliceArray(offset until end)
+            if (chunk.size == 512) pipeline.pushAudio(chunk)
+        }
+
+        try {
+            // If VAD triggers on silence (unlikely), the transcription should be blank
+            val event = withTimeout(10_000) {
+                pipeline.events.first { it is SpeechEvent.TranscriptionCompleted }
+            }
+            val tc = event as SpeechEvent.TranscriptionCompleted
+            // Blank/silence input should produce empty or very short transcription
+            assertTrue(
+                "Silence should not produce long text, got '${tc.text}' (${tc.text.length} chars)",
+                tc.text.length < 20
+            )
+        } catch (_: Exception) {
+            // Expected: VAD does not trigger on silence, so no transcription event.
+            // This is the correct behavior.
+        }
+
+        pipeline.stop()
+        pipeline.close()
+    }
+
+    @Test
     fun transcriptionEventFields() = runBlocking {
         val config = SpeechConfig(modelDir = modelDir, useNnapi = false)
         val pipeline = SpeechPipeline(config)

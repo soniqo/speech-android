@@ -194,6 +194,74 @@ TEST(pipeline_speech_detection) {
     PASS();
 }
 
+TEST(resume_listening_null_safe) {
+    speech_resume_listening(nullptr);
+    PASS();
+}
+
+TEST(pipeline_multiple_sessions) {
+    const char* dir = find_model_dir();
+    if (!dir) { fprintf(stderr, "  SKIP (no models)\n"); PASS(); return; }
+
+    for (int session = 0; session < 3; session++) {
+        speech_config_t cfg = speech_config_default();
+        cfg.model_dir = dir;
+        cfg.transcribe_only = true;
+
+        EventLog log;
+        speech_pipeline_t p = speech_create(cfg, test_event_cb, &log);
+        ASSERT(p != nullptr);
+
+        speech_start(p);
+
+        // Push 1 second of silence
+        float silence[512] = {};
+        for (int i = 0; i < 31; i++) {
+            speech_push_audio(p, silence, 512);
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+
+        speech_destroy(p);
+    }
+    // No crash or leak after 3 create/destroy cycles
+    PASS();
+}
+
+TEST(pipeline_concurrent_push) {
+    const char* dir = find_model_dir();
+    if (!dir) { fprintf(stderr, "  SKIP (no models)\n"); PASS(); return; }
+
+    speech_config_t cfg = speech_config_default();
+    cfg.model_dir = dir;
+    cfg.transcribe_only = true;
+
+    EventLog log;
+    speech_pipeline_t p = speech_create(cfg, test_event_cb, &log);
+    ASSERT(p != nullptr);
+
+    speech_start(p);
+
+    // Push audio from 4 threads concurrently
+    std::vector<std::thread> threads;
+    for (int t = 0; t < 4; t++) {
+        threads.emplace_back([p]() {
+            float buf[512] = {};
+            for (int i = 0; i < 50; i++) {
+                speech_push_audio(p, buf, 512);
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+        });
+    }
+
+    for (auto& th : threads) {
+        th.join();
+    }
+
+    speech_destroy(p);
+    // No crash under concurrent push
+    PASS();
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------

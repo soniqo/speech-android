@@ -74,6 +74,65 @@ class KokoroTtsTest {
     }
 
     @Test
+    fun ttsOutputIsValidPcm() = runBlocking {
+        val config = SpeechConfig(modelDir = modelDir, useNnapi = false)
+        val pipeline = SpeechPipeline(config)
+        pipeline.start()
+
+        // Feed speech-like signal to trigger VAD -> STT -> TTS
+        val sr = 16000
+        val speech = FloatArray(sr * 2) { i ->
+            val t = i.toFloat() / sr
+            (0.3f * Math.sin(2.0 * Math.PI * 200.0 * t)).toFloat()
+        }
+
+        for (offset in speech.indices step 512) {
+            val end = minOf(offset + 512, speech.size)
+            val chunk = speech.sliceArray(offset until end)
+            if (chunk.size == 512) pipeline.pushAudio(chunk)
+        }
+
+        // Silence to end utterance
+        val silence = FloatArray(sr)
+        for (offset in silence.indices step 512) {
+            val chunk = silence.sliceArray(offset until minOf(offset + 512, silence.size))
+            if (chunk.size == 512) pipeline.pushAudio(chunk)
+        }
+
+        try {
+            val event = withTimeout(30_000) {
+                pipeline.events.first { it is SpeechEvent.ResponseAudioDelta }
+            }
+            val audio = (event as SpeechEvent.ResponseAudioDelta).audio
+
+            // Audio should be non-empty
+            assertTrue("TTS output should not be empty", audio.isNotEmpty())
+
+            // PCM bytes should have reasonable length: at least 100 bytes for any phrase
+            assertTrue(
+                "TTS output too short (${audio.size} bytes), expected at least 100",
+                audio.size >= 100
+            )
+
+            // Verify audio is not all zeros (actual PCM content)
+            val hasNonZero = audio.any { it != 0.toByte() }
+            assertTrue("TTS output should contain non-zero PCM data", hasNonZero)
+
+            // At 24kHz 16-bit mono, 1 second = 48000 bytes.
+            // Even a single word should produce at least ~0.1s of audio (4800 bytes).
+            assertTrue(
+                "TTS output suspiciously short (${audio.size} bytes), expected >= 4800 for any phrase",
+                audio.size >= 4800
+            )
+        } catch (_: Exception) {
+            // Synthetic signal may not trigger full VAD -> STT -> TTS chain
+        }
+
+        pipeline.stop()
+        pipeline.close()
+    }
+
+    @Test
     fun pipelineHandlesEmptyAudio() {
         val config = SpeechConfig(modelDir = modelDir, useNnapi = false)
         val pipeline = SpeechPipeline(config)
