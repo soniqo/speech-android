@@ -294,6 +294,7 @@ ParakeetStt::Result ParakeetStt::tdt_decode(
         }
 
         if (best_token == cfg_.blank_id) {
+            // Blank: advance time, keep LSTM state unchanged
             t += 1;
         } else {
             if (best_token >= cfg_.first_text_token && best_token < cfg_.vocab_size) {
@@ -315,16 +316,16 @@ ParakeetStt::Result ParakeetStt::tdt_decode(
             t += std::max(cfg_.duration_bins[dur_idx], 1);
 
             prev_token = best_token;
+
+            // Update LSTM states only on non-blank emission
+            float* h_out = nullptr;
+            ort_check(api_, api_->GetTensorMutableData(outputs[2], (void**)&h_out));
+            std::memcpy(h_state.data(), h_out, state_size * sizeof(float));
+
+            float* c_out = nullptr;
+            ort_check(api_, api_->GetTensorMutableData(outputs[3], (void**)&c_out));
+            std::memcpy(c_state.data(), c_out, state_size * sizeof(float));
         }
-
-        // Update LSTM states
-        float* h_out = nullptr;
-        ort_check(api_, api_->GetTensorMutableData(outputs[2], (void**)&h_out));
-        std::memcpy(h_state.data(), h_out, state_size * sizeof(float));
-
-        float* c_out = nullptr;
-        ort_check(api_, api_->GetTensorMutableData(outputs[3], (void**)&c_out));
-        std::memcpy(c_state.data(), c_out, state_size * sizeof(float));
 
         // Cleanup
         for (int i = 3; i >= 0; i--) api_->ReleaseValue(outputs[i]);
