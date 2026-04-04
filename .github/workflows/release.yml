@@ -39,8 +39,16 @@ jobs:
       - name: Run unit tests
         run: ./gradlew :sdk:testReleaseUnitTest
 
-      - name: Build demo APK
+      - name: Decode signing keystore
+        run: echo "${{ secrets.SIGNING_KEYSTORE_BASE64 }}" | base64 -d > /tmp/release.keystore
+
+      - name: Build signed demo APK
         run: ./gradlew :app:assembleRelease
+        env:
+          SIGNING_KEYSTORE: /tmp/release.keystore
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
 
       - name: Publish to Maven Central
         run: ./gradlew :sdk:publishAndReleaseToMavenCentral --no-configuration-cache -PVERSION_NAME=${{ steps.version.outputs.VERSION }}
@@ -56,5 +64,5 @@ jobs:
         with:
           files: |
             sdk/build/outputs/aar/sdk-release.aar
-            app/build/outputs/apk/release/app-release-unsigned.apk
+            app/build/outputs/apk/release/app-release.apk
           generate_release_notes: true
