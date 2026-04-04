@@ -93,7 +93,7 @@ void KokoroTts::synthesize(
         style_shape, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &t_style));
 
     // speed [1]
-    float speed = 1.0f;
+    float speed = 0.85f;
     const int64_t speed_shape[] = {1};
     OrtValue* t_speed = nullptr;
     ort_check(api_, api_->CreateTensorWithDataAsOrtValue(
