@@ -16,6 +16,9 @@ object ModelManager {
 
     private const val BASE_URL = "https://huggingface.co/aufklarer"
 
+    // Bump when models on HuggingFace are updated to trigger cache invalidation.
+    private const val MODEL_VERSION = 2
+
     private fun models(precision: ModelPrecision): List<ModelFile> {
         val suffix = if (precision == ModelPrecision.INT8) "-int8" else ""
         return listOf(
@@ -57,6 +60,14 @@ object ModelManager {
         dir.mkdirs()
         File(dir, "voices").mkdirs()
 
+        // Invalidate cache if model version changed
+        val versionFile = File(dir, "version.txt")
+        val cached = versionFile.takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0
+        if (cached < MODEL_VERSION) {
+            dir.listFiles()?.filter { it.name != "voices" }?.forEach { it.delete() }
+            dir.resolve("voices").listFiles()?.forEach { it.delete() }
+        }
+
         val fileList = models(precision)
         // FP32 encoder needs the external data file
         val allFiles = if (precision == ModelPrecision.FP32) {
@@ -81,8 +92,9 @@ object ModelManager {
             completed++
         }
 
-        // Write a manifest so JNI knows which variant was downloaded
+        // Write manifest
         File(dir, "precision.txt").writeText(precision.name)
+        versionFile.writeText(MODEL_VERSION.toString())
 
         dir.absolutePath
     }
