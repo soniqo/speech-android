@@ -118,18 +118,14 @@ std::vector<int64_t> KokoroPhonemizer::tokenize(
     std::vector<int64_t> ids = {BOS_ID};
 
     // Tokenize IPA string character by character
-    // Space → $ (word boundary token, id=0)
+    // Spaces dropped (not in vocab) — matches iOS behavior
     auto chars = utf8_chars(phonemes);
     for (auto& ch : chars) {
-        if (ch == " ") {
-            ids.push_back(PAD_ID);  // $ = word boundary
-            continue;
-        }
         auto it = vocab_.find(ch);
         if (it != vocab_.end()) {
             ids.push_back(it->second);
         }
-        // Unknown chars silently dropped
+        // Unknown chars (including spaces) silently dropped
     }
 
     ids.push_back(EOS_ID);

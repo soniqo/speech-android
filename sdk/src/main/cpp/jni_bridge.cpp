@@ -272,7 +272,7 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
             dir + "/vocab.json",
             nnapi);
         h->tts = new KokoroTts(
-            dir + "/kokoro" + suffix + ".onnx",
+            dir + "/kokoro-e2e.onnx",
             dir + "/voices",
             dir,
             nnapi);
@@ -299,8 +299,10 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
 
         // Pipeline config
         sc_config_t config = sc_config_default();
-        config.min_silence_duration = 0.6f;  // 600ms — avoid cutting on natural word pauses
+        config.min_silence_duration = 0.5f;  // 500ms — balance: avoid word splits, catch short phrases
         config.eager_stt = false;              // wait for full silence confirmation
+        config.min_speech_duration = 0.15f;    // 150ms — catch short words like "hi", "yes"
+        config.post_playback_guard = 0.15f;    // 150ms — shorter guard for faster response after TTS
 
         if (h->llm) {
             // Full agent mode: STT → LLM → TTS

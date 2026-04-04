@@ -25,8 +25,9 @@ object ModelManager {
             ModelFile("Parakeet-TDT-v3-ONNX", "parakeet-encoder${suffix}.onnx"),
             ModelFile("Parakeet-TDT-v3-ONNX", "parakeet-decoder-joint${suffix}.onnx"),
             ModelFile("Parakeet-TDT-v3-ONNX", "vocab.json"),
-            // TTS
-            ModelFile("Kokoro-82M-ONNX", "kokoro${suffix}.onnx"),
+            // TTS (E2E model — single file + external weights)
+            ModelFile("Kokoro-82M-ONNX", "kokoro-e2e.onnx"),
+            ModelFile("Kokoro-82M-ONNX", "kokoro-e2e.onnx.data"),
             ModelFile("Kokoro-82M-ONNX", "vocab_index.json"),
             ModelFile("Kokoro-82M-ONNX", "us_gold.json"),
             ModelFile("Kokoro-82M-ONNX", "us_silver.json"),

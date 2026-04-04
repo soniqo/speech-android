@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
     private var pipeline: SpeechPipeline? = null
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
+    private var mediaPlayer: android.media.MediaPlayer? = null
     private var recording = false
     private val ttsBuffer = mutableListOf<ByteArray>()
     private var lastTtsMs = 0f
@@ -259,10 +260,14 @@ class MainActivity : ComponentActivity() {
                                     kotlinx.coroutines.delay(delayMs)
                                     stopAudioTrack()
                                     micPaused = false
-                                    p.resumeListening()
+                                    // Reset pipeline to accept new speech
+                                    // (speech-core auto-transitions to Idle before we get ResponseDone,
+                                    // so resumeListening() is a no-op — stop/start forces full reset)
+                                    p.stop()
+                                    p.start()
                                     setStatus("listening")
                                     setMicColor("#4CAF50")
-                                    android.util.Log.i("Speech", "TTS done -> listening, state=${p.state}")
+                                    android.util.Log.i("Speech", "TTS done -> restarted pipeline")
                                 }
                             }
 
@@ -320,48 +325,56 @@ class MainActivity : ComponentActivity() {
         }
         ttsBuffer.clear()
 
-        // Play with MODE_STREAM — write then drain
-        val minBuf = AudioTrack.getMinBufferSize(
-            TTS_SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        val track = AudioTrack(
+        // Write WAV file and play via MediaPlayer (louder on emulator)
+        val wavFile = java.io.File(filesDir, "tts_playback.wav")
+        java.io.FileOutputStream(wavFile).use { fos ->
+            // WAV header
+            val dataSize = totalSize
+            val fileSize = 36 + dataSize
+            val header = java.nio.ByteBuffer.allocate(44).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            header.put("RIFF".toByteArray())
+            header.putInt(fileSize)
+            header.put("WAVE".toByteArray())
+            header.put("fmt ".toByteArray())
+            header.putInt(16) // chunk size
+            header.putShort(1) // PCM
+            header.putShort(1) // mono
+            header.putInt(TTS_SAMPLE_RATE)
+            header.putInt(TTS_SAMPLE_RATE * 2) // byte rate
+            header.putShort(2) // block align
+            header.putShort(16) // bits per sample
+            header.put("data".toByteArray())
+            header.putInt(dataSize)
+            fos.write(header.array())
+            fos.write(merged)
+        }
+
+        val mp = android.media.MediaPlayer()
+        mp.setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .build(),
-            AudioFormat.Builder()
-                .setSampleRate(TTS_SAMPLE_RATE)
-                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                .build(),
-            maxOf(totalSize, minBuf),
-            AudioTrack.MODE_STREAM,
-            AudioManager.AUDIO_SESSION_ID_GENERATE,
+                .build()
         )
-        if (track.state != AudioTrack.STATE_INITIALIZED) {
-            android.util.Log.e("Speech", "playTtsAudio: AudioTrack not initialized!")
-            track.release()
-            return
-        }
-        track.play()
-        audioTrack = track
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            val written = track.write(merged, 0, totalSize)
-            android.util.Log.i("Speech", "playTtsAudio: written=$written/${totalSize}, playState=${track.playState}")
-            // Wait for playback to finish
-            val durationMs = (totalSize / 2).toLong() * 1000 / TTS_SAMPLE_RATE
-            kotlinx.coroutines.delay(durationMs + 200)
-            stopAudioTrack()
-        }
+        mp.setDataSource(wavFile.absolutePath)
+        mp.prepare()
+        mp.setVolume(1.0f, 1.0f)
+        mp.start()
+        mediaPlayer = mp
+        android.util.Log.i("Speech", "playTtsAudio: MediaPlayer started, duration=${mp.duration}ms")
     }
 
     private fun stopAudioTrack() {
-        val track = audioTrack ?: return
-        audioTrack = null
-        try {
-            track.stop()
-        } catch (_: Exception) {}
-        track.release()
+        audioTrack?.let { track ->
+            audioTrack = null
+            try { track.stop() } catch (_: Exception) {}
+            track.release()
+        }
+        mediaPlayer?.let { mp ->
+            mediaPlayer = null
+            try { mp.stop() } catch (_: Exception) {}
+            mp.release()
+        }
     }
 
     // ---------------------------------------------------------------------------

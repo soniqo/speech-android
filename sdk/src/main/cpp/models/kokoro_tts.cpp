@@ -1,7 +1,10 @@
 #include "kokoro_tts.h"
 #include "onnx_engine.h"
 #include <cstring>
+#include <cstdlib>
 #include <fstream>
+
+static constexpr int MAX_PHONEMES = 128;
 
 KokoroTts::KokoroTts(
     const std::string& model_path,
@@ -51,25 +54,38 @@ void KokoroTts::synthesize(
     auto* mem = OnnxEngine::get().cpu_memory();
 
     // Text → phoneme token IDs
-    auto tokens = phonemizer_.tokenize(text);
-    if (tokens.empty() || cancelled_) return;
+    auto raw_tokens = phonemizer_.tokenize(text, MAX_PHONEMES);
+    if (raw_tokens.empty() || cancelled_) return;
 
-    auto phonemes = phonemizer_.text_to_phonemes(text);
-    LOGI("TTS: text='%.60s' phonemes='%.80s' tokens=%zu",
-         text, phonemes.c_str(), tokens.size());
+    size_t token_count = raw_tokens.size();
 
-    int64_t num_tokens = static_cast<int64_t>(tokens.size());
+    LOGI("TTS: text='%.60s' tokens=%zu", text, token_count);
+
+    // Pad to fixed MAX_PHONEMES with attention mask
+    std::vector<int64_t> input_ids(MAX_PHONEMES, 0);
+    std::vector<int64_t> attention_mask(MAX_PHONEMES, 0);
+    for (size_t i = 0; i < token_count && i < MAX_PHONEMES; i++) {
+        input_ids[i] = raw_tokens[i];
+        attention_mask[i] = 1;
+    }
 
     // --- input tensors ---
 
-    // tokens [1, N]
-    const int64_t tok_shape[] = {1, num_tokens};
-    OrtValue* t_tokens = nullptr;
-    ort_check(api_, api_->CreateTensorWithDataAsOrtValue(
-        mem, tokens.data(), tokens.size() * sizeof(int64_t),
-        tok_shape, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &t_tokens));
+    const int64_t ids_shape[] = {1, MAX_PHONEMES};
 
-    // style / voice embedding [1, 256]
+    // input_ids [1, 128]
+    OrtValue* t_ids = nullptr;
+    ort_check(api_, api_->CreateTensorWithDataAsOrtValue(
+        mem, input_ids.data(), input_ids.size() * sizeof(int64_t),
+        ids_shape, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &t_ids));
+
+    // attention_mask [1, 128]
+    OrtValue* t_mask = nullptr;
+    ort_check(api_, api_->CreateTensorWithDataAsOrtValue(
+        mem, attention_mask.data(), attention_mask.size() * sizeof(int64_t),
+        ids_shape, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &t_mask));
+
+    // ref_s / voice embedding [1, 256]
     const int64_t style_shape[] = {1, 256};
     OrtValue* t_style = nullptr;
     ort_check(api_, api_->CreateTensorWithDataAsOrtValue(
@@ -84,79 +100,69 @@ void KokoroTts::synthesize(
         mem, &speed, sizeof(float),
         speed_shape, 1, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &t_speed));
 
+    // random_phases [1, 9]
+    float phases[9];
+    for (int i = 0; i < 9; i++)
+        phases[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+    const int64_t phases_shape[] = {1, 9};
+    OrtValue* t_phases = nullptr;
+    ort_check(api_, api_->CreateTensorWithDataAsOrtValue(
+        mem, phases, sizeof(phases),
+        phases_shape, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &t_phases));
+
     // --- run ---
 
-    const char* in_names[]  = {"tokens", "style", "speed"};
-    const char* out_names[] = {"audio"};
-    OrtValue* inputs[]  = {t_tokens, t_style, t_speed};
-    OrtValue* outputs[] = {nullptr};
+    const char* in_names[]  = {"input_ids", "attention_mask", "ref_s", "speed", "random_phases"};
+    const char* out_names[] = {"audio", "audio_length_samples", "pred_dur"};
+    OrtValue* inputs[]  = {t_ids, t_mask, t_style, t_speed, t_phases};
+    OrtValue* outputs[] = {nullptr, nullptr, nullptr};
 
     ort_check(api_, api_->Run(
         session_, nullptr,
-        in_names, inputs, 3,
-        out_names, 1, outputs));
+        in_names, inputs, 5,
+        out_names, 3, outputs));
 
     if (!cancelled_) {
         float* audio = nullptr;
         ort_check(api_, api_->GetTensorMutableData(outputs[0], (void**)&audio));
 
-        OrtTensorTypeAndShapeInfo* info = nullptr;
-        ort_check(api_, api_->GetTensorTypeAndShape(outputs[0], &info));
-        size_t num_elements = 0;
-        api_->GetTensorShapeElementCount(info, &num_elements);
-        api_->ReleaseTensorTypeAndShapeInfo(info);
+        // Get valid sample count from model
+        int64_t* len_ptr = nullptr;
+        ort_check(api_, api_->GetTensorMutableData(outputs[1], (void**)&len_ptr));
+        size_t valid_samples = static_cast<size_t>(len_ptr[0]);
 
-        // Trim trailing silence (padding from fixed-size model output)
-        const int frame_size = 240;  // 10ms at 24kHz
-        size_t valid_end = num_elements;
-        for (int i = static_cast<int>(num_elements) - frame_size; i > 0; i -= frame_size) {
-            float rms = 0;
-            for (int j = 0; j < frame_size && (i + j) < (int)num_elements; j++)
-                rms += audio[i + j] * audio[i + j];
-            rms = std::sqrt(rms / frame_size);
-            if (rms > 0.005f) {
-                valid_end = std::min(static_cast<size_t>(i + frame_size), num_elements);
-                break;
-            }
-        }
-
-        // Fade out last 5ms to prevent click
-        const size_t fade = std::min(static_cast<size_t>(120), valid_end);
+        // Fade in/out (5ms) to prevent pop/click
+        const size_t fade = std::min(static_cast<size_t>(120), valid_samples);
         for (size_t i = 0; i < fade; i++) {
-            audio[valid_end - fade + i] *= static_cast<float>(fade - i) / static_cast<float>(fade);
+            audio[i] *= static_cast<float>(i) / static_cast<float>(fade);
+            audio[valid_samples - fade + i] *= static_cast<float>(fade - i) / static_cast<float>(fade);
         }
 
-        // Fade in first 5ms to prevent pop
-        const size_t fade_in = std::min(static_cast<size_t>(120), valid_end);
-        for (size_t i = 0; i < fade_in; i++) {
-            audio[i] *= static_cast<float>(i) / static_cast<float>(fade_in);
-        }
-
-        // Normalize
+        // Normalize to 0.9 peak (handles both quiet and clipping outputs)
         float peak = 0.0f;
-        for (size_t i = 0; i < valid_end; i++) {
+        for (size_t i = 0; i < valid_samples; i++) {
             float a = std::abs(audio[i]);
             if (a > peak) peak = a;
         }
-        float gain = (peak > 0.01f) ? (0.9f / peak) : 1.0f;
-        if (gain > 2.0f) gain = 2.0f;
-        if (gain > 1.01f) {
-            for (size_t i = 0; i < valid_end; i++)
+        if (peak > 0.01f) {
+            float gain = 0.9f / peak;
+            for (size_t i = 0; i < valid_samples; i++)
                 audio[i] *= gain;
         }
 
-        LOGI("TTS: samples=%zu valid=%zu peak=%.4f gain=%.1fx",
-             num_elements, valid_end, peak, gain);
+        LOGI("TTS: valid=%zu peak=%.4f", valid_samples, peak);
 
-        on_chunk(audio, valid_end, true, ctx);
+        on_chunk(audio, valid_samples, true, ctx);
     }
 
     // --- cleanup ---
 
-    api_->ReleaseValue(outputs[0]);
+    for (int i = 2; i >= 0; i--) api_->ReleaseValue(outputs[i]);
+    api_->ReleaseValue(t_phases);
     api_->ReleaseValue(t_speed);
     api_->ReleaseValue(t_style);
-    api_->ReleaseValue(t_tokens);
+    api_->ReleaseValue(t_mask);
+    api_->ReleaseValue(t_ids);
 }
 
 void KokoroTts::cancel() {
