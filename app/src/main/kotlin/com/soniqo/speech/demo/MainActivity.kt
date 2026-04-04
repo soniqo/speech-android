@@ -50,6 +50,10 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TTS_SAMPLE_RATE = 24000
+        private val isEmulator = android.os.Build.FINGERPRINT.contains("generic")
+                || android.os.Build.MODEL.contains("Emulator")
+                || android.os.Build.MODEL.contains("sdk")
+                || android.os.Build.HARDWARE.contains("ranchu")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -246,28 +250,37 @@ class MainActivity : ComponentActivity() {
                             }
 
                             is SpeechEvent.ResponseDone -> {
-                                android.util.Log.i("Speech", "ResponseDone -> playing TTS")
+                                android.util.Log.i("Speech", "ResponseDone -> TTS ready")
                                 val totalBytes = ttsBuffer.sumOf { it.size }
                                 val durationSec = totalBytes / 2f / TTS_SAMPLE_RATE
                                 addSystemLine("tts: ${"%.0f".format(lastTtsMs)}ms → ${"%.1f".format(durationSec)}s audio")
-                                micPaused = true
-                                setStatus("speaking...")
-                                setMicColor("#FF9800")
-                                playTtsAudio()
-                                // Resume after playback
-                                val delayMs = (durationSec * 1000).toLong() + 200
-                                lifecycleScope.launch {
-                                    kotlinx.coroutines.delay(delayMs)
-                                    stopAudioTrack()
-                                    micPaused = false
-                                    // Reset pipeline to accept new speech
-                                    // (speech-core auto-transitions to Idle before we get ResponseDone,
-                                    // so resumeListening() is a no-op — stop/start forces full reset)
+
+                                if (isEmulator) {
+                                    // Emulator: skip playback (QEMU audio kills mic)
+                                    // Save to file for host-side playback via adb
+                                    saveTtsAudio()
+                                    addBubble("[audio ${"%,.1f".format(durationSec)}s]", isUser = false)
                                     p.stop()
                                     p.start()
                                     setStatus("listening")
                                     setMicColor("#4CAF50")
-                                    android.util.Log.i("Speech", "TTS done -> restarted pipeline")
+                                } else {
+                                    // Real device: play audio
+                                    micPaused = true
+                                    setStatus("speaking...")
+                                    setMicColor("#FF9800")
+                                    playTtsAudio()
+                                    val delayMs = (durationSec * 1000).toLong() + 200
+                                    lifecycleScope.launch {
+                                        kotlinx.coroutines.delay(delayMs)
+                                        stopAudioTrack()
+                                        micPaused = false
+                                        p.stop()
+                                        p.start()
+                                        setStatus("listening")
+                                        setMicColor("#4CAF50")
+                                        android.util.Log.i("Speech", "TTS done -> restarted pipeline")
+                                    }
                                 }
                             }
 
@@ -308,6 +321,18 @@ class MainActivity : ComponentActivity() {
     // ---------------------------------------------------------------------------
     // Audio output (TTS playback)
     // ---------------------------------------------------------------------------
+
+    private fun saveTtsAudio() {
+        if (ttsBuffer.isEmpty()) return
+        val totalSize = ttsBuffer.sumOf { it.size }
+        val merged = ByteArray(totalSize)
+        var offset = 0
+        for (chunk in ttsBuffer) { chunk.copyInto(merged, offset); offset += chunk.size }
+        ttsBuffer.clear()
+        val file = java.io.File(filesDir, "tts_output.raw")
+        file.writeBytes(merged)
+        android.util.Log.i("Speech", "TTS saved: ${totalSize} bytes to ${file.absolutePath}")
+    }
 
     private fun playTtsAudio() {
         stopAudioTrack()
