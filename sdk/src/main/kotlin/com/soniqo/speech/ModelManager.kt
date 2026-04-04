@@ -34,6 +34,11 @@ object ModelManager {
             ModelFile("Kokoro-82M-ONNX", "vocab_index.json"),
             ModelFile("Kokoro-82M-ONNX", "us_gold.json"),
             ModelFile("Kokoro-82M-ONNX", "us_silver.json"),
+            ModelFile("Kokoro-82M-ONNX", "dict_fr.json"),
+            ModelFile("Kokoro-82M-ONNX", "dict_es.json"),
+            ModelFile("Kokoro-82M-ONNX", "dict_it.json"),
+            ModelFile("Kokoro-82M-ONNX", "dict_pt.json"),
+            ModelFile("Kokoro-82M-ONNX", "dict_hi.json"),
             ModelFile("Kokoro-82M-ONNX", "voices/af_heart.bin"),
             // Noise cancellation
             ModelFile("DeepFilterNet3-ONNX", "deepfilter-auxiliary.bin"),

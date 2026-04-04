@@ -18,6 +18,11 @@ FILES=(
     "Kokoro-82M-ONNX/vocab_index.json"
     "Kokoro-82M-ONNX/us_gold.json"
     "Kokoro-82M-ONNX/us_silver.json"
+    "Kokoro-82M-ONNX/dict_fr.json"
+    "Kokoro-82M-ONNX/dict_es.json"
+    "Kokoro-82M-ONNX/dict_it.json"
+    "Kokoro-82M-ONNX/dict_pt.json"
+    "Kokoro-82M-ONNX/dict_hi.json"
     "Kokoro-82M-ONNX/voices/af_heart.bin"
 )
 

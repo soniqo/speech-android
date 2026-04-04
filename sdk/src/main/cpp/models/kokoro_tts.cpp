@@ -21,6 +21,12 @@ KokoroTts::KokoroTts(
     phonemizer_.load_vocab(data_dir + "/vocab_index.json");
     phonemizer_.load_dictionaries(data_dir);
 
+    // Load optional non-English pronunciation dictionaries
+    for (const char* lang : {"fr", "es", "it", "pt", "hi"}) {
+        phonemizer_.load_language_dict(lang,
+            data_dir + "/dict_" + lang + ".json");
+    }
+
     // Load default voice
     set_voice("af_heart");
 }
@@ -47,10 +53,17 @@ std::vector<float> KokoroTts::load_voice_embedding(const std::string& name) {
 }
 
 void KokoroTts::synthesize(
-    const char* text, const char* /*language*/,
+    const char* text, const char* language,
     ChunkCallback on_chunk, void* ctx)
 {
     cancelled_ = false;
+
+    // Set language for phonemizer (falls back to "en" if null/empty)
+    if (language && language[0]) {
+        phonemizer_.set_language(language);
+    } else {
+        phonemizer_.set_language("en");
+    }
     auto* mem = OnnxEngine::get().cpu_memory();
 
     // Text → phoneme token IDs

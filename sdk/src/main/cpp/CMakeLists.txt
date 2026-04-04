@@ -57,6 +57,7 @@ add_library(speech_android SHARED
     models/parakeet_stt.cpp
     models/kokoro_tts.cpp
     models/kokoro_phonemizer.cpp
+    models/kokoro_multilingual.cpp
     models/deepfilter.cpp
 )
 

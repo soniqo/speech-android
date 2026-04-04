@@ -41,6 +41,7 @@ add_library(speech SHARED
     ${SDK_CPP}/models/parakeet_stt.cpp
     ${SDK_CPP}/models/kokoro_tts.cpp
     ${SDK_CPP}/models/kokoro_phonemizer.cpp
+    ${SDK_CPP}/models/kokoro_multilingual.cpp
     ${SDK_CPP}/models/deepfilter.cpp
 )
 

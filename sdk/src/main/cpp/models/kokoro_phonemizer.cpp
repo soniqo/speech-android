@@ -1,4 +1,5 @@
 #include "kokoro_phonemizer.h"
+#include "kokoro_multilingual.h"
 #include <algorithm>
 #include <cctype>
 
@@ -90,6 +91,24 @@ bool KokoroPhonemizer::load_dictionaries(const std::string& dir) {
     return !gold_dict_.empty() || !silver_dict_.empty();
 }
 
+bool KokoroPhonemizer::load_language_dict(
+    const std::string& lang, const std::string& path)
+{
+    auto text = json::read_file(path);
+    if (text.empty()) return false;
+
+    // Language dicts are flat {"word": "phonemes"} format
+    auto dict = json::parse_flat_object(text);
+    if (dict.empty()) return false;
+
+    lang_dicts_[lang] = std::move(dict);
+    return true;
+}
+
+void KokoroPhonemizer::set_language(const std::string& lang) {
+    language_ = lang;
+}
+
 void KokoroPhonemizer::grow_dictionary(
     std::unordered_map<std::string, json::DictEntry>& dict)
 {
@@ -154,6 +173,40 @@ std::vector<int64_t> KokoroPhonemizer::pad(
 // ---------------------------------------------------------------------------
 
 std::string KokoroPhonemizer::text_to_phonemes(const std::string& text) {
+    // Route non-English languages to multilingual phonemizers
+    if (language_ == "fr") {
+        auto it = lang_dicts_.find("fr");
+        static const std::unordered_map<std::string, std::string> empty;
+        return multilingual::french_phonemize(text, it != lang_dicts_.end() ? it->second : empty);
+    }
+    if (language_ == "es") {
+        auto it = lang_dicts_.find("es");
+        static const std::unordered_map<std::string, std::string> empty;
+        return multilingual::spanish_phonemize(text, it != lang_dicts_.end() ? it->second : empty);
+    }
+    if (language_ == "it") {
+        auto it = lang_dicts_.find("it");
+        static const std::unordered_map<std::string, std::string> empty;
+        return multilingual::italian_phonemize(text, it != lang_dicts_.end() ? it->second : empty);
+    }
+    if (language_ == "pt") {
+        auto it = lang_dicts_.find("pt");
+        static const std::unordered_map<std::string, std::string> empty;
+        return multilingual::portuguese_phonemize(text, it != lang_dicts_.end() ? it->second : empty);
+    }
+    if (language_ == "hi") {
+        auto it = lang_dicts_.find("hi");
+        static const std::unordered_map<std::string, std::string> empty;
+        return multilingual::hindi_phonemize(text, it != lang_dicts_.end() ? it->second : empty);
+    }
+    if (language_ == "ja") {
+        return multilingual::japanese_phonemize(text);
+    }
+    if (language_ == "zh") {
+        return multilingual::chinese_phonemize(text);
+    }
+
+    // English (default)
     auto normalized = normalize_text(text);
     auto words = split_words(normalized);
 

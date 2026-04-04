@@ -7,10 +7,12 @@
 
 /// GPL-free phonemizer for Kokoro TTS — ported from speech-swift.
 ///
-/// Three-tier approach (all Apache-2.0 / BSD compatible):
-/// 1. Dictionary lookup — gold + silver IPA dictionaries from misaki
+/// Three-tier approach for English (all Apache-2.0 / BSD compatible):
+/// 1. Dictionary lookup �� gold + silver IPA dictionaries from misaki
 /// 2. Suffix stemming — strips -s/-ed/-ing, looks up stem, applies phonological rules
 /// 3. BART G2P — encoder-decoder neural model for OOV words (optional ONNX)
+///
+/// Non-English languages use dictionary-first with rule-based G2P fallback.
 ///
 /// No eSpeak-NG dependency.
 class KokoroPhonemizer {
@@ -26,6 +28,14 @@ public:
 
     /// Load pronunciation dictionaries (us_gold.json, us_silver.json).
     bool load_dictionaries(const std::string& dir);
+
+    /// Load a language-specific pronunciation dictionary (dict_fr.json, etc.).
+    /// Returns true if the dictionary was loaded successfully.
+    bool load_language_dict(const std::string& lang, const std::string& path);
+
+    /// Set the active language for phonemization.
+    /// Supported: "en" (default), "fr", "es", "it", "pt", "hi", "ja", "zh".
+    void set_language(const std::string& lang);
 
     /// Convert text → phoneme token IDs (with BOS/EOS, max 510).
     std::vector<int64_t> tokenize(const std::string& text, int max_length = 510);
@@ -56,7 +66,13 @@ private:
     // IPA symbol → token ID
     std::unordered_map<std::string, int> vocab_;
 
-    // Pronunciation dictionaries
+    // English pronunciation dictionaries
     std::unordered_map<std::string, json::DictEntry> gold_dict_;
     std::unordered_map<std::string, json::DictEntry> silver_dict_;
+
+    // Active language (default: English)
+    std::string language_ = "en";
+
+    // Non-English pronunciation dictionaries keyed by language code
+    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> lang_dicts_;
 };
