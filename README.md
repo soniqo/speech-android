@@ -4,7 +4,7 @@ On-device speech SDK for Android and embedded Linux, powered by [ONNX Runtime](h
 
 Speech recognition (114 languages), text-to-speech, voice activity detection, and noise cancellation — all running locally. No cloud APIs, no data leaves the device.
 
-**[Models](https://huggingface.co/collections/aufklarer/speech-android-models-69bb8a156cac0b96a2247f26)** · **[Demo app](app/)** · **[speech-swift](https://github.com/soniqo/speech-swift)** (Apple counterpart) · **[speech-core](https://github.com/soniqo/speech-core)** (pipeline engine)
+**[Download APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk)** · **[Models](https://huggingface.co/collections/aufklarer/speech-android-models-69bb8a156cac0b96a2247f26)** · **[speech-swift](https://github.com/soniqo/speech-swift)** (Apple counterpart) · **[speech-core](https://github.com/soniqo/speech-core)** (pipeline engine)
 
 ## Platforms
 
@@ -26,11 +26,15 @@ Models are downloaded automatically on first launch (Android) or placed manually
 
 ## Android
 
+### Try the demo
+
+Download the [signed APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk) and install on any arm64 Android device (8+). Models (~1.2 GB) download automatically on first launch.
+
 ### Add dependency
 
 ```kotlin
 dependencies {
-    implementation("audio.soniqo:speech:0.0.1")
+    implementation("audio.soniqo:speech:0.0.3")
 }
 ```
 
