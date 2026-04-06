@@ -207,6 +207,7 @@ class MainActivity : ComponentActivity() {
                     modelDir = modelDir,
                     useNnapi = false,
                     precision = ModelPrecision.INT8,
+                    emitPartialTranscriptions = true,
                 )
 
                 val p = SpeechPipeline(config)
@@ -227,6 +228,10 @@ class MainActivity : ComponentActivity() {
                                 val speechDur = System.currentTimeMillis() - speechStartTime
                                 setStatus("transcribing... (${"%.1f".format(speechDur / 1000f)}s)")
                                 setMicColor("#FF9800")
+                            }
+
+                            is SpeechEvent.PartialTranscription -> {
+                                setStatus("hearing: ${event.text}")
                             }
 
                             is SpeechEvent.TranscriptionCompleted -> {

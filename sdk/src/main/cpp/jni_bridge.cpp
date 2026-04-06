@@ -108,6 +108,48 @@ static int stt_sample_rate(void* ctx) {
     return static_cast<ParakeetStt*>(ctx)->input_sample_rate();
 }
 
+static void stt_begin_stream(void* ctx, int sample_rate) {
+    static_cast<ParakeetStt*>(ctx)->begin_stream(sample_rate);
+}
+
+static sc_partial_result_t stt_push_chunk(void* ctx, const float* audio, size_t len) {
+    auto* stt = static_cast<ParakeetStt*>(ctx);
+    auto r = stt->push_chunk(audio, len);
+    static thread_local std::string text_buf;
+    static thread_local std::string lang_buf;
+    text_buf = std::move(r.text);
+    lang_buf = std::move(r.language);
+    return {
+        .text = text_buf.c_str(),
+        .language = lang_buf.empty() ? nullptr : lang_buf.c_str(),
+        .confidence = r.confidence,
+    };
+}
+
+static void stt_flush_stream(void* ctx) {
+    static_cast<ParakeetStt*>(ctx)->flush_stream();
+}
+
+static sc_transcription_result_t stt_end_stream(void* ctx) {
+    auto* stt = static_cast<ParakeetStt*>(ctx);
+    auto r = stt->end_stream();
+    static thread_local std::string text_buf;
+    static thread_local std::string lang_buf;
+    text_buf = std::move(r.text);
+    lang_buf = std::move(r.language);
+    return {
+        .text = text_buf.c_str(),
+        .language = lang_buf.empty() ? nullptr : lang_buf.c_str(),
+        .confidence = r.confidence,
+        .start_time = 0.0f,
+        .end_time = 0.0f,
+    };
+}
+
+static void stt_cancel_stream(void* ctx) {
+    static_cast<ParakeetStt*>(ctx)->cancel_stream();
+}
+
 // --- TTS ---
 
 static void tts_synthesize(
@@ -237,7 +279,8 @@ JNIEXPORT jlong JNICALL
 Java_audio_soniqo_speech_NativeBridge_nativeCreate(
     JNIEnv* env, jobject /*thiz*/,
     jstring modelDir, jboolean useNnapi, jboolean useInt8,
-    jobject callback, jobject llmCallback)
+    jobject callback, jobject llmCallback,
+    jboolean emitPartialTranscriptions, jfloat partialTranscriptionInterval)
 {
     auto dir = jstring_to_string(env, modelDir);
     bool nnapi = useNnapi;
@@ -290,6 +333,11 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
         stt_vt.context = h->stt;
         stt_vt.transcribe = stt_transcribe;
         stt_vt.input_sample_rate = stt_sample_rate;
+        stt_vt.begin_stream = stt_begin_stream;
+        stt_vt.push_chunk = stt_push_chunk;
+        stt_vt.flush_stream = stt_flush_stream;
+        stt_vt.end_stream = stt_end_stream;
+        stt_vt.cancel_stream = stt_cancel_stream;
 
         sc_tts_vtable_t tts_vt = {};
         tts_vt.context = h->tts;
@@ -299,10 +347,12 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
 
         // Pipeline config
         sc_config_t config = sc_config_default();
-        config.min_silence_duration = 0.5f;  // 500ms — balance: avoid word splits, catch short phrases
-        config.eager_stt = false;              // wait for full silence confirmation
-        config.min_speech_duration = 0.15f;    // 150ms — catch short words like "hi", "yes"
-        config.post_playback_guard = 0.15f;    // 150ms — shorter guard for faster response after TTS
+        config.min_silence_duration = 0.5f;
+        config.eager_stt = false;
+        config.min_speech_duration = 0.15f;
+        config.post_playback_guard = 0.15f;
+        config.emit_partial_transcriptions = emitPartialTranscriptions;
+        config.partial_transcription_interval = partialTranscriptionInterval;
 
         if (h->llm) {
             // Full agent mode: STT → LLM → TTS
