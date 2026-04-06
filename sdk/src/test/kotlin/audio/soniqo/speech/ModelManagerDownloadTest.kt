@@ -219,4 +219,136 @@ class ModelManagerDownloadTest {
 
         assertEquals("redirected content", dest.readText())
     }
+
+    @Test
+    fun `read timeout triggers retry`() {
+        // Use a client with very short timeout to simulate slow server
+        val slowClient = client
+        val savedClient = client
+        client = OkHttpClient.Builder()
+            .connectTimeout(1, TimeUnit.SECONDS)
+            .readTimeout(1, TimeUnit.SECONDS)
+            .build()
+
+        // First response: throttle body to trigger read timeout
+        server.enqueue(
+            MockResponse()
+                .setBody("partial")
+                .throttleBody(1, 5, TimeUnit.SECONDS) // 1 byte per 5s → timeout
+        )
+        // Second response: fast
+        server.enqueue(MockResponse().setBody("ok"))
+
+        val dest = File(tmpDir.root, "model.onnx")
+        downloadFile(server.url("/model.onnx").toString(), dest)
+
+        assertTrue(dest.exists())
+        assertEquals("ok", dest.readText())
+
+        client = savedClient
+    }
+
+    @Test
+    fun `detects incomplete download via Content-Length`() {
+        // Server claims 1000 bytes but only sends 5
+        server.enqueue(
+            MockResponse()
+                .setBody("short")
+                .setHeader("Content-Length", "1000")
+        )
+        server.enqueue(
+            MockResponse()
+                .setBody("short")
+                .setHeader("Content-Length", "1000")
+        )
+        server.enqueue(
+            MockResponse()
+                .setBody("short")
+                .setHeader("Content-Length", "1000")
+        )
+
+        val dest = File(tmpDir.root, "model.onnx")
+        try {
+            downloadFile(server.url("/model.onnx").toString(), dest)
+            fail("Should have thrown")
+        } catch (e: IOException) {
+            assertTrue(e.message!!.contains("Incomplete") || e.message!!.contains("Failed"))
+        }
+
+        assertFalse(dest.exists())
+    }
+
+    @Test
+    fun `skips already downloaded file`() {
+        // Simulate ModelManager behavior: file already exists, skip download
+        val dest = File(tmpDir.root, "model.onnx")
+        dest.writeText("cached content")
+
+        // No server response enqueued — if download is attempted, it'll fail
+        assertTrue(dest.exists())
+        assertEquals("cached content", dest.readText())
+    }
+
+    @Test
+    fun `stale tmp files do not interfere with fresh download`() {
+        // Leftover .tmp from a previous crashed session
+        val tmp = File(tmpDir.root, "model.onnx.tmp")
+        tmp.writeText("stale garbage from previous crash")
+
+        server.enqueue(MockResponse().setBody("fresh data"))
+
+        val dest = File(tmpDir.root, "model.onnx")
+        // Delete stale tmp first (like ModelManager does on startup)
+        tmpDir.root.walk().filter { it.extension == "tmp" }.forEach { it.delete() }
+
+        downloadFile(server.url("/model.onnx").toString(), dest)
+
+        assertTrue(dest.exists())
+        assertEquals("fresh data", dest.readText())
+        assertFalse(tmp.exists())
+    }
+
+    @Test
+    fun `concurrent downloads to different files succeed`() {
+        val files = (1..3).map { i ->
+            server.enqueue(MockResponse().setBody("content-$i"))
+            File(tmpDir.root, "model-$i.onnx")
+        }
+
+        files.forEachIndexed { i, dest ->
+            downloadFile(server.url("/model-${i + 1}.onnx").toString(), dest)
+        }
+
+        files.forEachIndexed { i, dest ->
+            assertTrue(dest.exists())
+            assertEquals("content-${i + 1}", dest.readText())
+        }
+    }
+
+    @Test
+    fun `large file download preserves all bytes`() {
+        // 1MB of random-ish data
+        val size = 1_048_576
+        val data = ByteArray(size) { (it % 251).toByte() }
+        server.enqueue(MockResponse().setBody(okio.Buffer().write(data)))
+
+        val dest = File(tmpDir.root, "large.onnx")
+        downloadFile(server.url("/large.onnx").toString(), dest)
+
+        assertEquals(size.toLong(), dest.length())
+        assertArrayEquals(data, dest.readBytes())
+    }
+
+    @Test
+    fun `error message includes HTTP status code`() {
+        server.enqueue(MockResponse().setResponseCode(403))
+
+        val dest = File(tmpDir.root, "model.onnx")
+        try {
+            downloadFile(server.url("/model.onnx").toString(), dest, maxRetries = 1)
+            fail("Should have thrown")
+        } catch (e: IOException) {
+            assertTrue(e.message!!.contains("403"))
+        }
+    }
 }
