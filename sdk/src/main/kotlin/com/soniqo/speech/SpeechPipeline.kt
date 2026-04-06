@@ -83,6 +83,13 @@ class SpeechPipeline(private val config: SpeechConfig) : AutoCloseable {
     val state: PipelineState
         get() = PipelineState.from(NativeBridge.nativeGetState(handle))
 
+    /**
+     * Non-null if NNAPI failed during model loading and the engine fell back to CPU.
+     * Contains the NNAPI error message. Useful for diagnostics — ask users to report this.
+     */
+    val nnapiFallbackReason: String?
+        get() = NativeBridge.nativeNnapiFallbackReason()
+
     fun start() {
         NativeBridge.nativeStart(handle)
     }

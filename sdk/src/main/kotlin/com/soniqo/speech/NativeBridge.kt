@@ -14,6 +14,7 @@ internal object NativeBridge {
         llmCallback: LlmCallback?,
     ): Long
 
+    external fun nativeNnapiFallbackReason(): String?
     external fun nativeDestroy(handle: Long)
     external fun nativeStart(handle: Long)
     external fun nativeStop(handle: Long)

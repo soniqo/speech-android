@@ -338,7 +338,13 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
             sc_pipeline_set_enhancer(h->pipeline, enh_vt);
         }
 
-        LOGI("Pipeline created (NNAPI=%d, LLM=%s)", nnapi, h->llm ? "yes" : "no");
+        auto& engine = OnnxEngine::get();
+        if (engine.had_nnapi_fallback()) {
+            LOGI("Pipeline created with NNAPI fallback to CPU: %s",
+                 engine.nnapi_fallback_reason().c_str());
+        } else {
+            LOGI("Pipeline created (NNAPI=%d, LLM=%s)", nnapi, h->llm ? "yes" : "no");
+        }
     } catch (const std::exception& e) {
         LOGE("Pipeline creation failed: %s", e.what());
         if (h->llm && h->llm->callback) env->DeleteGlobalRef(h->llm->callback);
@@ -347,6 +353,17 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
     }
 
     return reinterpret_cast<jlong>(h);
+}
+
+JNIEXPORT jstring JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeNnapiFallbackReason(
+    JNIEnv* env, jobject /*thiz*/)
+{
+    auto& engine = OnnxEngine::get();
+    if (engine.had_nnapi_fallback()) {
+        return env->NewStringUTF(engine.nnapi_fallback_reason().c_str());
+    }
+    return nullptr;
 }
 
 JNIEXPORT void JNICALL

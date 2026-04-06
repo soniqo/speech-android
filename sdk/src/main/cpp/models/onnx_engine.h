@@ -35,6 +35,10 @@ public:
     const OrtApi* api() const { return api_; }
     OrtEnv* env() const { return env_; }
 
+    /// True if any model fell back from NNAPI to CPU during session creation.
+    bool had_nnapi_fallback() const { return nnapi_fallback_; }
+    const std::string& nnapi_fallback_reason() const { return nnapi_fallback_reason_; }
+
     OrtSession* load(const std::string& path, bool nnapi = true) {
         OrtSessionOptions* opts = nullptr;
         ort_check(api_, api_->CreateSessionOptions(&opts));
@@ -43,13 +47,11 @@ public:
 
         if (nnapi) {
 #ifdef __ANDROID__
-            // NNAPI accelerates on Qualcomm Hexagon DSP / Samsung NPU
             const char* keys[] = {"nnapi_flags"};
             const char* values[] = {"0"};
             OrtStatus* s = api_->SessionOptionsAppendExecutionProvider(
                 opts, "NNAPI", keys, values, 1);
 #else
-            // QNN EP accelerates on Qualcomm Hexagon DSP (automotive/embedded)
             const char* keys[] = {"backend_path"};
             const char* values[] = {"libQnnHtp.so"};
             OrtStatus* s = api_->SessionOptionsAppendExecutionProvider(
@@ -62,7 +64,32 @@ public:
         }
 
         OrtSession* session = nullptr;
-        ort_check(api_, api_->CreateSession(env_, path.c_str(), opts, &session));
+        OrtStatus* create_status = api_->CreateSession(env_, path.c_str(), opts, &session);
+
+        // If session creation fails with NNAPI, retry CPU-only
+        if (create_status != nullptr && nnapi) {
+            const char* msg = api_->GetErrorMessage(create_status);
+            LOGI("NNAPI session failed (%s), retrying CPU-only", msg);
+            nnapi_fallback_ = true;
+            nnapi_fallback_reason_ = msg;
+            api_->ReleaseStatus(create_status);
+            api_->ReleaseSessionOptions(opts);
+
+            opts = nullptr;
+            ort_check(api_, api_->CreateSessionOptions(&opts));
+            api_->SetSessionGraphOptimizationLevel(opts, ORT_ENABLE_ALL);
+            api_->SetIntraOpNumThreads(opts, 4);
+
+            ort_check(api_, api_->CreateSession(env_, path.c_str(), opts, &session));
+        } else if (create_status != nullptr) {
+            // CPU-only also failed — propagate the error
+            const char* msg = api_->GetErrorMessage(create_status);
+            std::string err(msg);
+            api_->ReleaseStatus(create_status);
+            api_->ReleaseSessionOptions(opts);
+            throw std::runtime_error("ORT: " + err);
+        }
+
         api_->ReleaseSessionOptions(opts);
         return session;
     }
@@ -88,4 +115,6 @@ private:
     const OrtApi* api_ = nullptr;
     OrtEnv* env_ = nullptr;
     OrtMemoryInfo* mem_ = nullptr;
+    bool nnapi_fallback_ = false;
+    std::string nnapi_fallback_reason_;
 };

@@ -307,15 +307,150 @@ class MainActivity : ComponentActivity() {
                     micButton.isEnabled = true
                     setStatus("tap to talk")
                     addSystemLine("ready")
+
+                    p.nnapiFallbackReason?.let { reason ->
+                        addSystemLine("⚠ NNAPI failed, using CPU: $reason")
+                        addSystemLine(deviceInfoSummary())
+                        val info = "NNAPI fallback: $reason\n${deviceInfoSummary()}"
+                        addReportButton(info)
+                    }
                 }
 
             } catch (e: Exception) {
+                val log = buildDiagnosticLog(e)
+                writeCrashLog(log)
                 withContext(Dispatchers.Main) {
                     addSystemLine("init error: ${e.message}")
-                    setStatus("error")
+                    addSystemLine(deviceInfoSummary())
+                    addReportButton(log)
+                    setStatus("error — tap to retry")
+                    statusView.setOnClickListener { retryInit() }
                 }
             }
         }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Diagnostics
+    // ---------------------------------------------------------------------------
+
+    private fun retryInit() {
+        statusView.setOnClickListener(null)
+        statusView.setOnLongClickListener(null)
+        loadPipeline()
+    }
+
+    private fun deviceInfoSummary(): String {
+        val mfr = android.os.Build.MANUFACTURER
+        val model = android.os.Build.MODEL
+        val ver = android.os.Build.VERSION.RELEASE
+        val api = android.os.Build.VERSION.SDK_INT
+        val hw = android.os.Build.HARDWARE
+        val rt = Runtime.getRuntime()
+        val freeMb = rt.freeMemory() / 1_048_576
+        val maxMb = rt.maxMemory() / 1_048_576
+        return "$mfr $model · Android $ver (API $api) · $hw · RAM ${freeMb}/${maxMb}MB"
+    }
+
+    private fun buildDiagnosticLog(e: Exception): String {
+        val rt = Runtime.getRuntime()
+        return buildString {
+            appendLine("=== Speech SDK Crash Log ===")
+            appendLine("Time: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", java.util.Locale.US).format(java.util.Date())}")
+            appendLine()
+            appendLine("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+            appendLine("Android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
+            appendLine("Hardware: ${android.os.Build.HARDWARE}")
+            appendLine("SoC: ${android.os.Build.SOC_MANUFACTURER} ${android.os.Build.SOC_MODEL}")
+            appendLine("ABI: ${android.os.Build.SUPPORTED_ABIS.joinToString()}")
+            appendLine("RAM: ${rt.freeMemory() / 1_048_576}MB free / ${rt.maxMemory() / 1_048_576}MB max")
+            appendLine()
+            appendLine("Error: ${e.message}")
+            appendLine()
+            appendLine("Stack trace:")
+            appendLine(e.stackTraceToString())
+        }
+    }
+
+    private fun writeCrashLog(log: String) {
+        try {
+            java.io.File(filesDir, "crash.log").writeText(log)
+        } catch (_: Exception) {}
+    }
+
+    private fun addReportButton(log: String) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 8, 0, 8)
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+
+        val issueBtn = TextView(this).apply {
+            text = "Open Issue"
+            setTextColor(Color.parseColor("#4FC3F7"))
+            textSize = 13f
+            setPadding(24, 12, 24, 12)
+            setOnClickListener { openGitHubIssue(log) }
+        }
+
+        val emailBtn = TextView(this).apply {
+            text = "Send Email"
+            setTextColor(Color.parseColor("#4FC3F7"))
+            textSize = 13f
+            setPadding(24, 12, 24, 12)
+            setOnClickListener { sendEmail(log) }
+        }
+
+        val copyBtn = TextView(this).apply {
+            text = "Copy Log"
+            setTextColor(Color.parseColor("#4FC3F7"))
+            textSize = 13f
+            setPadding(24, 12, 24, 12)
+            setOnClickListener { copyToClipboard(log) }
+        }
+
+        row.addView(issueBtn)
+        row.addView(emailBtn)
+        row.addView(copyBtn)
+        chatLayout.addView(row)
+        chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun openGitHubIssue(log: String) {
+        val title = android.net.Uri.encode("Bug: crash on ${android.os.Build.MODEL}")
+        val body = android.net.Uri.encode(
+            "**Device:** ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\n" +
+            "**Android:** ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})\n" +
+            "**Hardware:** ${android.os.Build.HARDWARE}\n\n" +
+            "**Log:**\n```\n$log\n```\n"
+        )
+        val url = "https://github.com/soniqo/speech-android/issues/new?title=$title&body=$body"
+        try {
+            startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+        } catch (_: Exception) {
+            copyToClipboard(log)
+        }
+    }
+
+    private fun sendEmail(log: String) {
+        val subject = "Speech SDK bug: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+        val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO).apply {
+            data = android.net.Uri.parse("mailto:")
+            putExtra(android.content.Intent.EXTRA_EMAIL, arrayOf("root@ivan.digital"))
+            putExtra(android.content.Intent.EXTRA_SUBJECT, subject)
+            putExtra(android.content.Intent.EXTRA_TEXT, log)
+        }
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            copyToClipboard(log)
+        }
+    }
+
+    private fun copyToClipboard(text: String) {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        cm.setPrimaryClip(android.content.ClipData.newPlainText("Speech crash log", text))
+        android.widget.Toast.makeText(this, "Log copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
     }
 
     // ---------------------------------------------------------------------------
