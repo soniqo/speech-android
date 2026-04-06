@@ -72,6 +72,17 @@ class SpeechPipeline(private val config: SpeechConfig) : AutoCloseable {
         }
     }
 
+    init {
+        val rt = Runtime.getRuntime()
+        val availableMb = (rt.maxMemory() - rt.totalMemory() + rt.freeMemory()) / 1_048_576
+        if (availableMb < 300) {
+            throw IllegalStateException(
+                "Not enough memory to load models. Available: ${availableMb}MB, " +
+                "required: ~1.2GB. Close other apps and try again."
+            )
+        }
+    }
+
     private var handle: Long = NativeBridge.nativeCreate(
         config.modelDir,
         config.useNnapi,
