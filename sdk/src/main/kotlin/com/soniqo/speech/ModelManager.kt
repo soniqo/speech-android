@@ -3,14 +3,18 @@ package audio.soniqo.speech
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
-import java.net.URL
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 /**
  * Downloads and caches ONNX models from HuggingFace.
  *
  * Models are stored in the app's internal files directory under `models/`.
+ * Uses OkHttp with timeouts, retry, and resume for reliable large-file downloads.
  */
 object ModelManager {
 
@@ -18,6 +22,16 @@ object ModelManager {
 
     // Bump when models on HuggingFace are updated to trigger cache invalidation.
     private const val MODEL_VERSION = 2
+
+    private const val MAX_RETRIES = 3
+    private const val RETRY_DELAY_MS = 2000L
+
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
 
     private fun models(precision: ModelPrecision): List<ModelFile> {
         val suffix = if (precision == ModelPrecision.INT8) "-int8" else ""
@@ -73,6 +87,9 @@ object ModelManager {
             dir.resolve("voices").listFiles()?.forEach { it.delete() }
         }
 
+        // Clean up leftover partial downloads from previous crashes
+        dir.walk().filter { it.extension == "tmp" }.forEach { it.delete() }
+
         val fileList = models(precision)
         // FP32 encoder needs the external data file
         val allFiles = if (precision == ModelPrecision.FP32) {
@@ -106,25 +123,74 @@ object ModelManager {
 
     private fun downloadFile(url: String, dest: File, onBytes: (Long) -> Unit) {
         val tmp = File(dest.parentFile, "${dest.name}.tmp")
-        try {
-            val conn = URL(url).openConnection()
-            conn.connect()
-            conn.getInputStream().use { input ->
-                FileOutputStream(tmp).use { output ->
-                    val buf = ByteArray(8192)
-                    var total = 0L
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n == -1) break
-                        output.write(buf, 0, n)
-                        total += n
-                        onBytes(total)
+
+        var lastException: IOException? = null
+
+        for (attempt in 1..MAX_RETRIES) {
+            try {
+                val existingBytes = if (tmp.exists()) tmp.length() else 0L
+
+                val requestBuilder = Request.Builder().url(url)
+                if (existingBytes > 0) {
+                    // Resume partial download
+                    requestBuilder.header("Range", "bytes=$existingBytes-")
+                }
+
+                val response = client.newCall(requestBuilder.build()).execute()
+
+                if (!response.isSuccessful && response.code != 206) {
+                    response.close()
+                    throw IOException("HTTP ${response.code} for $url")
+                }
+
+                val body = response.body ?: throw IOException("Empty response for $url")
+
+                // Validate Content-Length when starting fresh
+                val contentLength = body.contentLength()
+                val isResume = response.code == 206
+
+                FileOutputStream(tmp, isResume).use { output ->
+                    body.byteStream().use { input ->
+                        val buf = ByteArray(65536)
+                        var total = if (isResume) existingBytes else 0L
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n == -1) break
+                            output.write(buf, 0, n)
+                            total += n
+                            onBytes(total)
+                        }
                     }
                 }
+
+                response.close()
+
+                // Validate downloaded size if Content-Length was provided
+                if (!isResume && contentLength > 0 && tmp.length() != contentLength) {
+                    throw IOException(
+                        "Incomplete download: got ${tmp.length()} bytes, expected $contentLength"
+                    )
+                }
+
+                // Success — move to final location
+                if (!tmp.renameTo(dest)) {
+                    // renameTo can fail on some filesystems; fall back to copy
+                    tmp.copyTo(dest, overwrite = true)
+                    tmp.delete()
+                }
+                return
+
+            } catch (e: IOException) {
+                lastException = e
+                if (attempt < MAX_RETRIES) {
+                    Thread.sleep(RETRY_DELAY_MS * attempt)
+                    // Keep tmp file for resume on next attempt
+                }
             }
-            tmp.renameTo(dest)
-        } finally {
-            tmp.delete()
         }
+
+        // All retries exhausted — clean up partial file and throw
+        tmp.delete()
+        throw IOException("Download failed after $MAX_RETRIES attempts: ${lastException?.message}", lastException)
     }
 }
