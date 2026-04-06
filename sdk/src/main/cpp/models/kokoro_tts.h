@@ -28,6 +28,7 @@ public:
 
 private:
     std::vector<float> load_voice_embedding(const std::string& name);
+    void auto_switch_voice(const std::string& language);
 
     const OrtApi* api_;
     OrtSession* session_ = nullptr;
@@ -35,5 +36,6 @@ private:
     KokoroPhonemizer phonemizer_;
     std::vector<float> voice_embedding_;
     std::string voices_dir_;
+    std::string current_lang_;
     bool cancelled_ = false;
 };

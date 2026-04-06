@@ -55,6 +55,13 @@ bool ParakeetStt::load_vocab(const std::string& path) {
         try {
             int id = std::stoi(key);
             vocab_[id] = val;
+
+            // Index language tokens like <|en|>, <|fr|>, etc.
+            if (val.size() >= 5 && val.size() <= 6 &&
+                val.substr(0, 2) == "<|" && val.substr(val.size() - 2) == "|>") {
+                std::string code = val.substr(2, val.size() - 4);
+                lang_tokens_[id] = code;
+            }
         } catch (...) {}
     }
 
@@ -65,7 +72,8 @@ bool ParakeetStt::load_vocab(const std::string& path) {
         cfg_.total_logits = cfg_.vocab_size + 1 + cfg_.num_dur_bins;
     }
 
-    LOGI("Parakeet vocab: %zu tokens, blank=%d", vocab_.size(), cfg_.blank_id);
+    LOGI("Parakeet vocab: %zu tokens, %zu language tokens, blank=%d",
+         vocab_.size(), lang_tokens_.size(), cfg_.blank_id);
     return !vocab_.empty();
 }
 
@@ -207,6 +215,7 @@ ParakeetStt::Result ParakeetStt::tdt_decode(
     auto* mem = OnnxEngine::get().cpu_memory();
 
     std::vector<int> token_ids;
+    std::string detected_language;
     float log_prob_sum = 0.0f;
     int log_prob_count = 0;
 
@@ -298,9 +307,18 @@ ParakeetStt::Result ParakeetStt::tdt_decode(
             t += 1;
         } else {
             if (best_token >= cfg_.first_text_token && best_token < cfg_.vocab_size) {
-                token_ids.push_back(best_token);
-                log_prob_sum += best_score;
-                log_prob_count++;
+                // Check if this is a language token
+                auto lang_it = lang_tokens_.find(best_token);
+                if (lang_it != lang_tokens_.end()) {
+                    if (detected_language.empty()) {
+                        detected_language = lang_it->second;
+                    }
+                    // Don't add language tokens to output text
+                } else {
+                    token_ids.push_back(best_token);
+                    log_prob_sum += best_score;
+                    log_prob_count++;
+                }
             }
 
             // Duration logits start after token logits
@@ -340,10 +358,15 @@ ParakeetStt::Result ParakeetStt::tdt_decode(
 
     Result result;
     result.text = decode_tokens(token_ids);
+    result.language = detected_language;
 
     if (log_prob_count > 0) {
         float mean_logit = log_prob_sum / static_cast<float>(log_prob_count);
         result.confidence = 1.0f / (1.0f + std::exp(-mean_logit * 0.1f));
+    }
+
+    if (!result.language.empty()) {
+        LOGI("STT: detected language=%s", result.language.c_str());
     }
 
     return result;

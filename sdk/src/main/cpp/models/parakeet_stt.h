@@ -59,4 +59,7 @@ private:
 
     // SentencePiece vocabulary: token ID → token string
     std::unordered_map<int, std::string> vocab_;
+
+    // Language tokens: token ID → ISO 639-1 code (e.g. 64 → "en", 71 → "fr")
+    std::unordered_map<int, std::string> lang_tokens_;
 };

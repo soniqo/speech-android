@@ -52,18 +52,47 @@ std::vector<float> KokoroTts::load_voice_embedding(const std::string& name) {
     return embedding;
 }
 
+void KokoroTts::auto_switch_voice(const std::string& lang) {
+    if (lang == current_lang_) return;
+    current_lang_ = lang;
+
+    // Map language to default voice
+    struct LangVoice { const char* lang; const char* voice; };
+    static const LangVoice map[] = {
+        {"en", "af_heart"},
+        {"fr", "ff_siwis"},
+        {"es", "ef_dora"},
+        {"it", "if_sara"},
+        {"pt", "pf_dora"},
+        {"hi", "hf_alpha"},
+        {"ja", "jf_alpha"},
+        {"zh", "zf_xiaobei"},
+        {"ko", "kf_somi"},
+    };
+
+    for (auto& entry : map) {
+        if (lang == entry.lang) {
+            auto emb = load_voice_embedding(entry.voice);
+            if (emb[0] != 0.0f || emb[1] != 0.0f) {  // check not zeroed (missing file)
+                voice_embedding_ = std::move(emb);
+                LOGI("TTS: auto-switched voice to %s for language %s", entry.voice, entry.lang);
+            }
+            return;
+        }
+    }
+    // Unknown language — keep current voice
+}
+
 void KokoroTts::synthesize(
     const char* text, const char* language,
     ChunkCallback on_chunk, void* ctx)
 {
     cancelled_ = false;
 
-    // Set language for phonemizer (falls back to "en" if null/empty)
-    if (language && language[0]) {
-        phonemizer_.set_language(language);
-    } else {
-        phonemizer_.set_language("en");
-    }
+    // Set language and auto-switch voice if language changed
+    std::string lang = (language && language[0]) ? language : "en";
+    phonemizer_.set_language(lang);
+    auto_switch_voice(lang);
     auto* mem = OnnxEngine::get().cpu_memory();
 
     // Text → phoneme token IDs
