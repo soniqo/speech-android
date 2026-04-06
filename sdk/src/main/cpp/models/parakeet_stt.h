@@ -46,6 +46,14 @@ public:
     Result transcribe(const float* audio, size_t length, int sample_rate);
     int input_sample_rate() const { return cfg_.sample_rate; }
 
+    // Streaming: accumulate audio and re-transcribe on each push_chunk call
+    bool supports_streaming() const { return true; }
+    void begin_stream(int sample_rate);
+    Result push_chunk(const float* audio, size_t length);
+    Result end_stream();
+    void cancel_stream();
+    void flush_stream();
+
 private:
     bool load_vocab(const std::string& path);
     std::vector<float> compute_mel(const float* audio, size_t length);
@@ -62,4 +70,9 @@ private:
 
     // Language tokens: token ID → ISO 639-1 code (e.g. 64 → "en", 71 → "fr")
     std::unordered_map<int, std::string> lang_tokens_;
+
+    // Streaming state
+    std::vector<float> stream_buffer_;
+    int stream_sample_rate_ = 16000;
+    bool streaming_ = false;
 };

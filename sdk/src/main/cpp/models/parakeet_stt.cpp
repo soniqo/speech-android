@@ -371,3 +371,42 @@ ParakeetStt::Result ParakeetStt::tdt_decode(
 
     return result;
 }
+
+// ---------------------------------------------------------------------------
+// Streaming: accumulate audio and re-transcribe
+// ---------------------------------------------------------------------------
+
+void ParakeetStt::begin_stream(int sample_rate) {
+    stream_buffer_.clear();
+    stream_sample_rate_ = sample_rate;
+    streaming_ = true;
+}
+
+ParakeetStt::Result ParakeetStt::push_chunk(const float* audio, size_t length) {
+    stream_buffer_.insert(stream_buffer_.end(), audio, audio + length);
+
+    // Need at least 0.5s of audio for meaningful transcription
+    if (stream_buffer_.size() < static_cast<size_t>(stream_sample_rate_ / 2)) {
+        return {};
+    }
+
+    return transcribe(stream_buffer_.data(), stream_buffer_.size(), stream_sample_rate_);
+}
+
+ParakeetStt::Result ParakeetStt::end_stream() {
+    streaming_ = false;
+    if (stream_buffer_.empty()) return {};
+
+    auto result = transcribe(stream_buffer_.data(), stream_buffer_.size(), stream_sample_rate_);
+    stream_buffer_.clear();
+    return result;
+}
+
+void ParakeetStt::cancel_stream() {
+    stream_buffer_.clear();
+    streaming_ = false;
+}
+
+void ParakeetStt::flush_stream() {
+    // No-op — single-utterance sessions only
+}

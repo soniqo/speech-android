@@ -12,6 +12,8 @@ internal object NativeBridge {
         useInt8: Boolean,
         callback: EventCallback,
         llmCallback: LlmCallback?,
+        emitPartialTranscriptions: Boolean,
+        partialTranscriptionInterval: Float,
     ): Long
 
     external fun nativeNnapiFallbackReason(): String?

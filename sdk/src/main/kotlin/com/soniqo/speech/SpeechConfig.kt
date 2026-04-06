@@ -23,4 +23,10 @@ data class SpeechConfig(
 
     /** Claude model to use for LLM inference. */
     val llmModel: String = "claude-sonnet-4-6",
+
+    /** Emit partial transcription events during speech (words appear as you speak). */
+    val emitPartialTranscriptions: Boolean = false,
+
+    /** Interval between partial transcriptions in seconds. */
+    val partialTranscriptionInterval: Float = 0.5f,
 )
