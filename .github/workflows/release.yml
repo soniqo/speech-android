@@ -44,7 +44,7 @@ jobs:
         run: echo "${{ secrets.SIGNING_KEYSTORE_BASE64 }}" | base64 -d > /tmp/release.keystore
 
       - name: Build signed demo APK
-        run: ./gradlew :app:assembleRelease
+        run: ./gradlew :app:assembleRelease -PVERSION_NAME=${{ steps.version.outputs.VERSION }} -PVERSION_CODE=${{ github.run_number }}
         env:
           SIGNING_KEYSTORE: /tmp/release.keystore
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
