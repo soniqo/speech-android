@@ -72,28 +72,6 @@ class SpeechPipeline(private val config: SpeechConfig) : AutoCloseable {
         }
     }
 
-    init {
-        val memInfo = android.app.ActivityManager.MemoryInfo()
-        val am = config.modelDir.let {
-            // Use app context from model dir parent to get ActivityManager
-            // Falls back to JVM check if context unavailable
-            null as? android.app.ActivityManager
-        }
-        // Check native available memory via /proc/meminfo
-        val availableMb = try {
-            val meminfo = java.io.File("/proc/meminfo").readText()
-            val match = Regex("""MemAvailable:\s+(\d+)\s+kB""").find(meminfo)
-            (match?.groupValues?.get(1)?.toLongOrNull() ?: 0L) / 1024
-        } catch (_: Exception) { Long.MAX_VALUE }
-
-        if (availableMb < 1200) {
-            throw IllegalStateException(
-                "Not enough memory to load models. Available: ${availableMb}MB, " +
-                "required: ~1.2GB. Close other apps and try again."
-            )
-        }
-    }
-
     private var handle: Long = NativeBridge.nativeCreate(
         config.modelDir,
         config.useNnapi,
