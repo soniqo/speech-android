@@ -1,6 +1,7 @@
 package audio.soniqo.speech
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -101,9 +102,14 @@ object ModelManager {
         var completed = 0
         for (model in allFiles) {
             val dest = File(dir, model.filename)
-            if (dest.exists()) {
+            if (dest.exists() && isValidModel(dest, model.filename)) {
                 completed++
                 continue
+            }
+            // Delete corrupt/incomplete files and redownload
+            if (dest.exists()) {
+                LOGI("Deleting invalid model file: ${model.filename} (${dest.length()} bytes)")
+                dest.delete()
             }
             dest.parentFile?.mkdirs()
 
@@ -193,4 +199,42 @@ object ModelManager {
         tmp.delete()
         throw IOException("Download failed after $MAX_RETRIES attempts: ${lastException?.message}", lastException)
     }
+
+    // ONNX files start with these bytes (protobuf magic for ONNX IR)
+    private val ONNX_MAGIC = byteArrayOf(0x08, 0x0)
+
+    /** Minimum expected sizes for key model files. */
+    private val MIN_SIZES = mapOf(
+        "parakeet-encoder-int8.onnx" to 100_000_000L,   // ~840 MB
+        "parakeet-decoder-joint-int8.onnx" to 10_000_000L, // ~51 MB
+        "kokoro-e2e.onnx" to 1_000L,                     // Small (weights in .data file)
+        "kokoro-e2e.onnx.data" to 50_000_000L,           // ~89 MB
+        "silero-vad.onnx" to 500_000L,                   // ~2 MB
+    )
+
+    private fun isValidModel(file: File, filename: String): Boolean {
+        if (file.length() == 0L) return false
+
+        // Check minimum size for known large files
+        MIN_SIZES[filename]?.let { minSize ->
+            if (file.length() < minSize) return false
+        }
+
+        // Validate ONNX magic bytes for .onnx files
+        if (filename.endsWith(".onnx")) {
+            try {
+                file.inputStream().use { stream ->
+                    val header = ByteArray(2)
+                    if (stream.read(header) != 2) return false
+                    if (header[0] != ONNX_MAGIC[0]) return false
+                }
+            } catch (_: Exception) {
+                return false
+            }
+        }
+
+        return true
+    }
+
+    private fun LOGI(msg: String) = Log.i("Speech", msg)
 }

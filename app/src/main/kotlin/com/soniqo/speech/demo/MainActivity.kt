@@ -321,7 +321,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 val log = buildDiagnosticLog(e)
                 writeCrashLog(log)
                 withContext(Dispatchers.Main) {
@@ -357,7 +357,7 @@ class MainActivity : ComponentActivity() {
         return "$mfr $model · Android $ver (API $api) · $hw · RAM ${freeMb}/${maxMb}MB"
     }
 
-    private fun buildDiagnosticLog(e: Exception): String {
+    private fun buildDiagnosticLog(e: Throwable): String {
         val rt = Runtime.getRuntime()
         return buildString {
             appendLine("=== Speech SDK Crash Log ===")

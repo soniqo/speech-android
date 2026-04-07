@@ -80,7 +80,12 @@ class SpeechPipeline(private val config: SpeechConfig) : AutoCloseable {
         llmCallback,
         config.emitPartialTranscriptions,
         config.partialTranscriptionInterval,
-    )
+    ).also { h ->
+        if (h == 0L) throw IllegalStateException(
+            "Failed to create native pipeline. Models may be corrupt — " +
+            "try clearing app data and reinstalling."
+        )
+    }
 
     val state: PipelineState
         get() = PipelineState.from(NativeBridge.nativeGetState(handle))

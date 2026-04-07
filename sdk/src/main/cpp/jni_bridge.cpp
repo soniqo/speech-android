@@ -373,20 +373,11 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
                 config, on_pipeline_event, h);
         }
 
-        // Optional: noise cancellation
-        std::string df_path = dir + "/deepfilter.onnx";
-        std::string aux_path = dir + "/deepfilter-auxiliary.bin";
-        FILE* f = fopen(df_path.c_str(), "r");
-        if (f) {
-            fclose(f);
-            h->enhancer = new DeepFilterEnhancer(df_path, aux_path, nnapi);
-
-            sc_enhancer_vtable_t enh_vt = {};
-            enh_vt.context = h->enhancer;
-            enh_vt.enhance = enhancer_enhance;
-            enh_vt.input_sample_rate = enhancer_sample_rate;
-            sc_pipeline_set_enhancer(h->pipeline, enh_vt);
-        }
+        // Note: DeepFilterNet3 noise cancellation is disabled in the pipeline.
+        // DFN operates at 48kHz but the pipeline pushes 16kHz audio — running
+        // DFN without resampling produces artifacts. Needs 16k→48k→DFN→48k→16k
+        // resample chain before it can be re-enabled. See issue #12.
+        // The model is still downloaded for future use.
 
         auto& engine = OnnxEngine::get();
         if (engine.had_nnapi_fallback()) {
@@ -397,8 +388,14 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
         }
     } catch (const std::exception& e) {
         LOGE("Pipeline creation failed: %s", e.what());
+        if (h->callback) env->DeleteGlobalRef(h->callback);
         if (h->llm && h->llm->callback) env->DeleteGlobalRef(h->llm->callback);
         delete h;
+        jclass ex_cls = env->FindClass("java/lang/RuntimeException");
+        if (ex_cls) {
+            std::string msg = std::string("Native pipeline failed: ") + e.what();
+            env->ThrowNew(ex_cls, msg.c_str());
+        }
         return 0;
     }
 
