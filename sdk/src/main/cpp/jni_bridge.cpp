@@ -397,8 +397,14 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
         }
     } catch (const std::exception& e) {
         LOGE("Pipeline creation failed: %s", e.what());
+        if (h->callback) env->DeleteGlobalRef(h->callback);
         if (h->llm && h->llm->callback) env->DeleteGlobalRef(h->llm->callback);
         delete h;
+        jclass ex_cls = env->FindClass("java/lang/RuntimeException");
+        if (ex_cls) {
+            std::string msg = std::string("Native pipeline failed: ") + e.what();
+            env->ThrowNew(ex_cls, msg.c_str());
+        }
         return 0;
     }
 
