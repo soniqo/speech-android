@@ -11,10 +11,9 @@ import org.junit.runner.RunWith
 /**
  * E2E test: DeepFilterNet3 noise cancellation.
  *
- * Verifies that:
- * - Model loads and enhancer is attached to pipeline
- * - Pipeline doesn't crash with enhancer enabled
- * - Noisy input can be processed without errors
+ * DFN is currently disabled in the pipeline (sample rate mismatch, see #12).
+ * These tests verify the pipeline works correctly without DFN and that
+ * the enableEnhancer config flag doesn't cause crashes.
  */
 @RunWith(AndroidJUnit4::class)
 class DeepFilterTest {
@@ -28,7 +27,8 @@ class DeepFilterTest {
     }
 
     @Test
-    fun pipelineWithEnhancerCreates() {
+    fun pipelineCreatesWithEnhancerFlag() {
+        // enableEnhancer is accepted but DFN is not attached (disabled in jni_bridge)
         val config = SpeechConfig(
             modelDir = modelDir,
             useNnapi = false,
@@ -40,7 +40,7 @@ class DeepFilterTest {
     }
 
     @Test
-    fun noisyInputProcessedWithoutCrash() {
+    fun noisyInputProcessedWithoutDfn() {
         val config = SpeechConfig(
             modelDir = modelDir,
             useNnapi = false,
@@ -49,10 +49,9 @@ class DeepFilterTest {
         val pipeline = SpeechPipeline(config)
         pipeline.start()
 
-        // Generate noisy signal: speech + random noise
+        // Noisy signal — should process fine even without DFN
         val sr = 16000
-        val n = sr * 2 // 2 seconds
-        val noisy = FloatArray(n) { i ->
+        val noisy = FloatArray(sr * 2) { i ->
             val t = i.toFloat() / sr
             val speech = (0.3f * Math.sin(2.0 * Math.PI * 200.0 * t)).toFloat()
             val noise = (Math.random().toFloat() - 0.5f) * 0.2f
