@@ -53,6 +53,7 @@ add_library(speech_android SHARED
     audio/mel.cpp
     audio/fft.cpp
     audio/stft.cpp
+    models/soc_detect.cpp
     models/silero_vad.cpp
     models/parakeet_stt.cpp
     models/kokoro_tts.cpp
