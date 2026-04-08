@@ -46,6 +46,8 @@ public:
         api_->SetIntraOpNumThreads(opts, 2);
 
         if (nnapi) {
+            LOGI("Loading model with hardware acceleration: %s",
+                 path.substr(path.find_last_of('/') + 1).c_str());
 #ifdef __ANDROID__
             const char* keys[] = {"nnapi_flags"};
             const char* values[] = {"0"};

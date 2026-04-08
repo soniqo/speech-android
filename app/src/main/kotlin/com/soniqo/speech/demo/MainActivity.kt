@@ -205,7 +205,7 @@ class MainActivity : ComponentActivity() {
 
                 val config = SpeechConfig(
                     modelDir = modelDir,
-                    useNnapi = false,
+                    useNnapi = !isEmulator,
                     precision = ModelPrecision.INT8,
                     emitPartialTranscriptions = true,
                 )
