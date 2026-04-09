@@ -24,7 +24,7 @@ object ModelManager {
     // Bump when models on HuggingFace are updated to trigger cache invalidation.
     private const val MODEL_VERSION = 2
 
-    private const val MAX_RETRIES = 3
+    private const val MAX_RETRIES = 5
     private const val RETRY_DELAY_MS = 2000L
 
     private val client = OkHttpClient.Builder()
@@ -145,8 +145,14 @@ object ModelManager {
                 val response = client.newCall(requestBuilder.build()).execute()
 
                 if (!response.isSuccessful && response.code != 206) {
+                    val code = response.code
                     response.close()
-                    throw IOException("HTTP ${response.code} for $url")
+                    if (code in 500..599) {
+                        // Server error — longer backoff, likely temporary
+                        throw IOException("Server temporarily unavailable (HTTP $code). " +
+                            "HuggingFace may be busy — try again in a few minutes.")
+                    }
+                    throw IOException("HTTP $code for $url")
                 }
 
                 val body = response.body ?: throw IOException("Empty response for $url")
@@ -189,8 +195,10 @@ object ModelManager {
             } catch (e: IOException) {
                 lastException = e
                 if (attempt < MAX_RETRIES) {
-                    Thread.sleep(RETRY_DELAY_MS * attempt)
-                    // Keep tmp file for resume on next attempt
+                    // Longer backoff for server errors (503 etc.)
+                    val isServerError = e.message?.contains("temporarily unavailable") == true
+                    val delay = if (isServerError) RETRY_DELAY_MS * attempt * 3 else RETRY_DELAY_MS * attempt
+                    Thread.sleep(delay)
                 }
             }
         }
