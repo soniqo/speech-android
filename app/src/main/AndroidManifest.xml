@@ -20,5 +20,17 @@
 
         <activity android:name=".MainActivity" android:exported="false" />
         <activity android:name=".DictationActivity" android:exported="false" />
+
+        <service
+            android:name="audio.soniqo.speech.service.SpeechRecognitionService"
+            android:exported="true"
+            android:permission="android.permission.RECORD_AUDIO">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/recognition_service" />
+        </service>
     </application>
 </manifest>
