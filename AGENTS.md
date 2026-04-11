@@ -128,3 +128,4 @@ SPEECH_MODEL_DIR=tests/models ./build/speech_test
 - **Always ask for confirmation before creating a git commit**
 - **Run unit tests (`./gradlew :sdk:test`) after making code changes**
 - **Run e2e tests (`./gradlew :sdk:connectedAndroidTest`) before tagging a release**
+- **README translations must stay in sync.** Any change to `README.md` must be mirrored in all translated copies: `README_zh.md`, `README_ja.md`, `README_ko.md`, `README_es.md`, `README_de.md`, `README_fr.md`, `README_hi.md`, `README_pt.md`, `README_ru.md`
