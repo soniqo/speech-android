@@ -15,17 +15,6 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 // ---------------------------------------------------------------------------
-// LLM handle — holds JNI references for Kotlin LlmBridge
-// ---------------------------------------------------------------------------
-
-struct LlmHandle {
-    JavaVM* jvm = nullptr;
-    jobject callback = nullptr;  // global ref to NativeBridge.LlmCallback
-    jmethodID chat_mid = nullptr;
-    jmethodID cancel_mid = nullptr;
-};
-
-// ---------------------------------------------------------------------------
 // Pipeline handle — owns all native objects for one pipeline instance
 // ---------------------------------------------------------------------------
 
@@ -35,7 +24,6 @@ struct PipelineHandle {
     ParakeetStt* stt = nullptr;
     KokoroTts* tts = nullptr;
     DeepFilterEnhancer* enhancer = nullptr;
-    LlmHandle* llm = nullptr;
 
     JavaVM* jvm = nullptr;
     jobject callback = nullptr;
@@ -47,7 +35,6 @@ struct PipelineHandle {
         delete tts;
         delete stt;
         delete vad;
-        delete llm;
     }
 };
 
@@ -177,52 +164,6 @@ static int enhancer_sample_rate(void* ctx) {
     return static_cast<DeepFilterEnhancer*>(ctx)->input_sample_rate();
 }
 
-// --- LLM ---
-
-static const char* role_to_str(sc_role_t role) {
-    switch (role) {
-        case SC_ROLE_SYSTEM:    return "system";
-        case SC_ROLE_ASSISTANT: return "assistant";
-        case SC_ROLE_TOOL:      return "tool";
-        default:                return "user";
-    }
-}
-
-static void llm_chat(void* ctx, const sc_message_t* msgs, size_t count,
-                     sc_llm_token_fn on_token, void* token_ctx)
-{
-    auto* h = static_cast<LlmHandle*>(ctx);
-    JNIEnv* env = get_env(h->jvm);
-    if (!env || !h->callback) return;
-
-    jclass string_cls = env->FindClass("java/lang/String");
-    jobjectArray roles = env->NewObjectArray(static_cast<jsize>(count), string_cls, nullptr);
-    jobjectArray contents = env->NewObjectArray(static_cast<jsize>(count), string_cls, nullptr);
-
-    for (size_t i = 0; i < count; i++) {
-        env->SetObjectArrayElement(roles, static_cast<jsize>(i),
-            env->NewStringUTF(role_to_str(msgs[i].role)));
-        env->SetObjectArrayElement(contents, static_cast<jsize>(i),
-            env->NewStringUTF(msgs[i].content ? msgs[i].content : ""));
-    }
-
-    // Blocks until Kotlin delivers all tokens via nativeDeliverLlmToken
-    env->CallVoidMethod(h->callback, h->chat_mid,
-        roles, contents,
-        static_cast<jlong>(reinterpret_cast<uintptr_t>(on_token)),
-        static_cast<jlong>(reinterpret_cast<uintptr_t>(token_ctx)));
-
-    env->DeleteLocalRef(roles);
-    env->DeleteLocalRef(contents);
-}
-
-static void llm_cancel(void* ctx) {
-    auto* h = static_cast<LlmHandle*>(ctx);
-    JNIEnv* env = get_env(h->jvm);
-    if (!env || !h->callback) return;
-    env->CallVoidMethod(h->callback, h->cancel_mid);
-}
-
 // ---------------------------------------------------------------------------
 // Event callback → Kotlin
 // ---------------------------------------------------------------------------
@@ -279,7 +220,7 @@ JNIEXPORT jlong JNICALL
 Java_audio_soniqo_speech_NativeBridge_nativeCreate(
     JNIEnv* env, jobject /*thiz*/,
     jstring modelDir, jboolean useNnapi, jboolean useInt8,
-    jobject callback, jobject llmCallback,
+    jobject callback,
     jboolean emitPartialTranscriptions, jfloat partialTranscriptionInterval)
 {
     auto dir = jstring_to_string(env, modelDir);
@@ -294,17 +235,6 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
     jclass cls = env->GetObjectClass(callback);
     h->on_event_mid = env->GetMethodID(cls, "onEvent",
         "(ILjava/lang/String;[BFFF)V");
-
-    // Set up LLM handle if provided
-    if (llmCallback) {
-        h->llm = new LlmHandle();
-        env->GetJavaVM(&h->llm->jvm);
-        h->llm->callback = env->NewGlobalRef(llmCallback);
-        jclass llm_cls = env->GetObjectClass(llmCallback);
-        h->llm->chat_mid = env->GetMethodID(llm_cls, "chat",
-            "([Ljava/lang/String;[Ljava/lang/String;JJ)V");
-        h->llm->cancel_mid = env->GetMethodID(llm_cls, "cancel", "()V");
-    }
 
     try {
         // Load models
@@ -354,24 +284,10 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
         config.emit_partial_transcriptions = emitPartialTranscriptions;
         config.partial_transcription_interval = partialTranscriptionInterval;
 
-        if (h->llm) {
-            // Full agent mode: STT → LLM → TTS
-            sc_llm_vtable_t llm_vt = {};
-            llm_vt.context = h->llm;
-            llm_vt.chat = llm_chat;
-            llm_vt.cancel = llm_cancel;
-
-            config.mode = SC_MODE_PIPELINE;
-            h->pipeline = sc_pipeline_create(
-                stt_vt, tts_vt, &llm_vt, vad_vt,
-                config, on_pipeline_event, h);
-        } else {
-            // Echo mode: STT → TTS (no LLM)
-            config.mode = SC_MODE_ECHO;
-            h->pipeline = sc_pipeline_create(
-                stt_vt, tts_vt, nullptr, vad_vt,
-                config, on_pipeline_event, h);
-        }
+        config.mode = SC_MODE_ECHO;
+        h->pipeline = sc_pipeline_create(
+            stt_vt, tts_vt, nullptr, vad_vt,
+            config, on_pipeline_event, h);
 
         // Note: DeepFilterNet3 noise cancellation is disabled in the pipeline.
         // DFN operates at 48kHz but the pipeline pushes 16kHz audio — running
@@ -384,12 +300,11 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
             LOGI("Pipeline created with NNAPI fallback to CPU: %s",
                  engine.nnapi_fallback_reason().c_str());
         } else {
-            LOGI("Pipeline created (NNAPI=%d, LLM=%s)", nnapi, h->llm ? "yes" : "no");
+            LOGI("Pipeline created (NNAPI=%d)", nnapi);
         }
     } catch (const std::exception& e) {
         LOGE("Pipeline creation failed: %s", e.what());
         if (h->callback) env->DeleteGlobalRef(h->callback);
-        if (h->llm && h->llm->callback) env->DeleteGlobalRef(h->llm->callback);
         delete h;
         jclass ex_cls = env->FindClass("java/lang/RuntimeException");
         if (ex_cls) {
@@ -420,7 +335,6 @@ Java_audio_soniqo_speech_NativeBridge_nativeDestroy(
     auto* h = reinterpret_cast<PipelineHandle*>(handle);
     if (h) {
         if (h->callback) env->DeleteGlobalRef(h->callback);
-        if (h->llm && h->llm->callback) env->DeleteGlobalRef(h->llm->callback);
         delete h;
     }
 }
@@ -469,22 +383,6 @@ Java_audio_soniqo_speech_NativeBridge_nativeGetState(
     auto* h = reinterpret_cast<PipelineHandle*>(handle);
     if (!h || !h->pipeline) return SC_STATE_IDLE;
     return sc_pipeline_state(h->pipeline);
-}
-
-JNIEXPORT void JNICALL
-Java_audio_soniqo_speech_NativeBridge_nativeDeliverLlmToken(
-    JNIEnv* env, jobject /*thiz*/,
-    jlong on_token_ptr, jlong token_ctx_ptr,
-    jstring token, jboolean is_final)
-{
-    auto fn = reinterpret_cast<sc_llm_token_fn>(
-        static_cast<uintptr_t>(on_token_ptr));
-    auto ctx = reinterpret_cast<void*>(
-        static_cast<uintptr_t>(token_ctx_ptr));
-
-    const char* tok = env->GetStringUTFChars(token, nullptr);
-    fn(tok, is_final, ctx);
-    env->ReleaseStringUTFChars(token, tok);
 }
 
 } // extern "C"

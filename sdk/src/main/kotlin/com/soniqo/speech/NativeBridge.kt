@@ -11,7 +11,6 @@ internal object NativeBridge {
         useNnapi: Boolean,
         useInt8: Boolean,
         callback: EventCallback,
-        llmCallback: LlmCallback?,
         emitPartialTranscriptions: Boolean,
         partialTranscriptionInterval: Float,
     ): Long
@@ -24,17 +23,6 @@ internal object NativeBridge {
     external fun nativeResumeListen(handle: Long)
     external fun nativeGetState(handle: Long): Int
 
-    /**
-     * Called from Kotlin (via LlmBridge) to deliver an LLM token back to
-     * the native pipeline worker thread that is blocked waiting for it.
-     */
-    external fun nativeDeliverLlmToken(
-        onTokenFnPtr: Long,
-        tokenCtxPtr: Long,
-        token: String,
-        isFinal: Boolean,
-    )
-
     /** Called from native code on the pipeline worker thread. */
     interface EventCallback {
         fun onEvent(
@@ -45,16 +33,5 @@ internal object NativeBridge {
             sttMs: Float,
             ttsMs: Float,
         )
-    }
-
-    /** Called from native code on the pipeline worker thread to request an LLM response. */
-    interface LlmCallback {
-        fun chat(
-            roles: Array<String>,
-            contents: Array<String>,
-            onTokenFnPtr: Long,
-            tokenCtxPtr: Long,
-        )
-        fun cancel()
     }
 }
