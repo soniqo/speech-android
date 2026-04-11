@@ -17,6 +17,7 @@ import android.util.AttributeSet
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -47,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var vadView: VadGraphView
     private lateinit var chatLayout: LinearLayout
     private lateinit var chatScroll: ScrollView
+    private lateinit var downloadProgress: ProgressBar
 
     companion object {
         private const val TTS_SAMPLE_RATE = 24000
@@ -81,6 +83,18 @@ class MainActivity : ComponentActivity() {
             setPadding(48, 80, 48, 20)
         }
         root.addView(statusView)
+
+        // Model download progress
+        downloadProgress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progress = 0
+            isIndeterminate = false
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { setMargins(48, 0, 48, 24) }
+        }
+        root.addView(downloadProgress)
 
         // Divider
         root.addView(divider())
@@ -200,7 +214,16 @@ class MainActivity : ComponentActivity() {
                     this@MainActivity,
                     precision = ModelPrecision.INT8,
                 ) { progress ->
-                    setStatus("${progress.file} ${progress.completed}/${progress.totalFiles}")
+                    val mb = progress.bytesDownloaded / 1_000_000
+                    setStatus("${progress.file} ${progress.completed}/${progress.totalFiles} (${mb} MB)")
+                    runOnUiThread {
+                        downloadProgress.progress =
+                            (progress.completed * 100 / progress.totalFiles).coerceIn(0, 100)
+                    }
+                }
+                runOnUiThread {
+                    downloadProgress.progress = 100
+                    downloadProgress.visibility = View.GONE
                 }
 
                 val config = SpeechConfig(

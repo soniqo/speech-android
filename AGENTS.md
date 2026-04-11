@@ -126,5 +126,7 @@ SPEECH_MODEL_DIR=tests/models ./build/speech_test
 - No Claude attribution in commits, PRs, or model cards
 - **Never push directly to main — always use a PR**
 - **Always ask for confirmation before creating a git commit**
+- **Always ask for confirmation before any action visible to others** — pushing to any branch, opening / commenting on / reviewing / closing / merging PRs or issues, posting to Slack or any external service. The git commit rule above is one instance of this broader principle: never create externally visible artifacts without explicit confirmation.
 - **Run unit tests (`./gradlew :sdk:test`) after making code changes**
 - **Run e2e tests (`./gradlew :sdk:connectedAndroidTest`) before tagging a release**
+- **README translations must stay in sync.** Any change to `README.md` must be mirrored in all translated copies: `README_zh.md`, `README_ja.md`, `README_ko.md`, `README_es.md`, `README_de.md`, `README_fr.md`, `README_hi.md`, `README_pt.md`, `README_ru.md`

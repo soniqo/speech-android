@@ -1,38 +1,38 @@
 # Speech Android
 
-📖 Read in: [English](README.md) · [中文](README_zh.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Deutsch](README_de.md) · [Français](README_fr.md) · [हिन्दी](README_hi.md) · [Português](README_pt.md) · [Русский](README_ru.md)
+📖 Sprachen: [English](README.md) · [中文](README_zh.md) · [日本語](README_ja.md) · [한국어](README_ko.md) · [Español](README_es.md) · [Deutsch](README_de.md) · [Français](README_fr.md) · [हिन्दी](README_hi.md) · [Português](README_pt.md) · [Русский](README_ru.md)
 
-On-device speech SDK for Android and embedded Linux, powered by [ONNX Runtime](https://onnxruntime.ai) and [speech-core](https://github.com/soniqo/speech-core).
+On-Device Speech-SDK für Android und Embedded Linux, basierend auf [ONNX Runtime](https://onnxruntime.ai) und [speech-core](https://github.com/soniqo/speech-core).
 
-Speech recognition (114 languages), text-to-speech (8 languages), voice activity detection, and noise cancellation — all running locally. No cloud APIs, no data leaves the device.
+Spracherkennung (114 Sprachen), Text-to-Speech (8 Sprachen), Sprachaktivitätserkennung und Rauschunterdrückung — alles lokal ausgeführt. Keine Cloud-APIs, keine Daten verlassen das Gerät.
 
-**[Demo APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk)** · **[Models](https://huggingface.co/collections/aufklarer/speech-android-models-69bb8a156cac0b96a2247f26)** · **[speech-swift](https://github.com/soniqo/speech-swift)** (Apple counterpart) · **[speech-core](https://github.com/soniqo/speech-core)** (pipeline engine)
+**[Demo-APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk)** · **[Modelle](https://huggingface.co/collections/aufklarer/speech-android-models-69bb8a156cac0b96a2247f26)** · **[speech-swift](https://github.com/soniqo/speech-swift)** (Apple-Pendant) · **[speech-core](https://github.com/soniqo/speech-core)** (Pipeline-Engine)
 
-## Platforms
+## Plattformen
 
-| Platform | API | Acceleration | Directory |
+| Plattform | API | Beschleunigung | Verzeichnis |
 | --- | --- | --- | --- |
 | Android | Kotlin (`SpeechPipeline`) | NNAPI (Snapdragon, Exynos, Tensor) | `sdk/` |
 | Embedded Linux | C (`speech.h`) | QNN (Hexagon DSP) | `linux/` |
 
-## Models
+## Modelle
 
-| Model | Task | INT8 Size | Languages |
+| Modell | Aufgabe | INT8-Größe | Sprachen |
 | --- | --- | --- | --- |
-| [Parakeet TDT v3](https://huggingface.co/aufklarer/Parakeet-TDT-v3-ONNX) | Speech recognition | 891 MB | 114 |
-| [Kokoro 82M](https://huggingface.co/aufklarer/Kokoro-82M-ONNX) | Text-to-speech | 330 MB | 8 (en, fr, es, it, pt, hi, ja, zh) |
-| [Silero VAD v5](https://huggingface.co/aufklarer/Silero-VAD-v5-ONNX) | Voice activity detection | 2 MB | Any |
-| [DeepFilterNet3](https://huggingface.co/aufklarer/DeepFilterNet3-ONNX) | Noise cancellation | ~8 MB | Any |
+| [Parakeet TDT v3](https://huggingface.co/aufklarer/Parakeet-TDT-v3-ONNX) | Spracherkennung | 891 MB | 114 |
+| [Kokoro 82M](https://huggingface.co/aufklarer/Kokoro-82M-ONNX) | Text-to-Speech | 330 MB | 8 (en, fr, es, it, pt, hi, ja, zh) |
+| [Silero VAD v5](https://huggingface.co/aufklarer/Silero-VAD-v5-ONNX) | Sprachaktivitätserkennung | 2 MB | Beliebig |
+| [DeepFilterNet3](https://huggingface.co/aufklarer/DeepFilterNet3-ONNX) | Rauschunterdrückung | ~8 MB | Beliebig |
 
-Models are downloaded automatically on first launch (Android) or placed manually (Linux).
+Modelle werden beim ersten Start automatisch heruntergeladen (Android) oder manuell platziert (Linux).
 
 ## Android
 
-### Try the demo
+### Demo ausprobieren
 
-Download the [signed APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk) and install on any arm64 Android device (8+). Models (~1.2 GB) download automatically on first launch.
+Lade das [signierte APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk) herunter und installiere es auf einem beliebigen arm64-Android-Gerät (8+). Modelle (~1,2 GB) werden beim ersten Start automatisch heruntergeladen.
 
-### Add dependency
+### Abhängigkeit hinzufügen
 
 ```kotlin
 dependencies {
@@ -40,7 +40,7 @@ dependencies {
 }
 ```
 
-### Kotlin usage
+### Kotlin-Verwendung
 
 ```kotlin
 val modelDir = ModelManager.ensureModels(context)
@@ -59,47 +59,47 @@ pipeline.events.collect { event ->
 
 pipeline.start()
 
-// Feed 16kHz mono float32 PCM from microphone
+// Speise 16kHz Mono float32 PCM vom Mikrofon ein
 pipeline.pushAudio(samples)
 ```
 
-### Build from source
+### Aus dem Quellcode bauen
 
 ```bash
 git clone --recursive https://github.com/soniqo/speech-android.git
 cd speech-android
 ./setup.sh
 ./gradlew :app:assembleDebug
-./gradlew :sdk:connectedAndroidTest   # 34 e2e tests
+./gradlew :sdk:connectedAndroidTest   # 34 e2e-Tests
 ```
 
-### Demo app
+### Demo-App
 
-The [`app/`](app/) module is a minimal voice assistant demo with:
+Das Modul [`app/`](app/) ist eine minimale Sprachassistenten-Demo mit:
 
-- Real-time VAD waveform visualization
-- Echo mode: transcribes speech and synthesizes it back (no LLM)
-- Chat bubble UI with STT/TTS latency display
+- Echtzeit-VAD-Wellenformvisualisierung
+- Echo-Modus: transkribiert Sprache und synthetisiert sie zurück (kein LLM)
+- Chat-Bubble-UI mit STT/TTS-Latenzanzeige
 
 ```bash
 ./gradlew :app:installDebug
 ```
 
-## Performance
+## Leistung
 
-Measured on Android emulator (arm64-v8a, no NNAPI). Real hardware is significantly faster.
+Gemessen auf einem Android-Emulator (arm64-v8a, ohne NNAPI). Echte Hardware ist deutlich schneller.
 
-| Model | Task | Audio | Inference | RTF |
+| Modell | Aufgabe | Audio | Inferenz | RTF |
 | --- | --- | --- | --- | --- |
-| Parakeet TDT v3 | STT | 1.5s | 175ms | 0.12 |
-| Kokoro 82M | TTS | 1.9s output | 1,075ms | 0.58 |
-| Silero VAD v5 | VAD | 32ms chunk | <1ms | <0.01 |
+| Parakeet TDT v3 | STT | 1,5s | 175ms | 0,12 |
+| Kokoro 82M | TTS | 1,9s Ausgabe | 1.075ms | 0,58 |
+| Silero VAD v5 | VAD | 32ms-Block | <1ms | <0,01 |
 
 ## Embedded Linux
 
-Minimal C API for automotive and embedded platforms. See [`linux/README.md`](linux/README.md) for full documentation.
+Minimale C-API für Automotive- und Embedded-Plattformen. Vollständige Dokumentation siehe [`linux/README.md`](linux/README.md).
 
-### C API usage
+### C-API-Verwendung
 
 ```c
 #include <speech.h>
@@ -111,14 +111,14 @@ void on_event(const speech_event_t* event, void* ctx) {
 
 speech_config_t cfg = speech_config_default();
 cfg.model_dir = "/opt/speech/models";
-cfg.use_qnn = true;  // Hexagon DSP acceleration
+cfg.use_qnn = true;  // Hexagon-DSP-Beschleunigung
 
 speech_pipeline_t p = speech_create(cfg, on_event, NULL);
 speech_start(p);
 speech_push_audio(p, pcm_samples, 512);
 ```
 
-### Build
+### Bauen
 
 ```bash
 cd linux && ./setup_linux.sh
@@ -127,14 +127,14 @@ cmake --build build
 ./build/speech_demo --model-dir /path/to/models
 ```
 
-### Test
+### Testen
 
 ```bash
-linux/tests/download_models.sh              # download ONNX models
-SPEECH_MODEL_DIR=tests/models ./build/speech_test   # 12 tests
+linux/tests/download_models.sh              # ONNX-Modelle herunterladen
+SPEECH_MODEL_DIR=tests/models ./build/speech_test   # 12 Tests
 ```
 
-### Cross-compile for Yocto
+### Cross-Compile für Yocto
 
 ```bash
 source /opt/poky/environment-setup-aarch64-poky-linux
@@ -150,9 +150,9 @@ Idle → Listening → Transcribing → Speaking → Idle
               └─── resumeListening() ───┘
 ```
 
-Barge-in supported: speaking during TTS playback interrupts and starts a new transcription.
+Barge-In wird unterstützt: Sprechen während der TTS-Wiedergabe unterbricht und startet eine neue Transkription.
 
-## Architecture
+## Architektur
 
 ```text
 ┌──────────────────────────────────────────────┐
@@ -174,24 +174,24 @@ Barge-in supported: speaking during TTS playback interrupts and starts a new tra
        ONNX Runtime (CPU / NNAPI / QNN)
 ```
 
-## Hardware Acceleration
+## Hardwarebeschleunigung
 
-| Platform | Chipset | Acceleration |
+| Plattform | Chipsatz | Beschleunigung |
 | --- | --- | --- |
 | Android | Snapdragon 8 Gen 1+ | NNAPI → Hexagon NPU |
 | Android | Samsung Exynos 2200+ | NNAPI → Samsung NPU |
 | Android | Google Tensor G2+ | NNAPI → Google TPU |
 | Automotive | SA8295P / SA8255P | QNN → Hexagon DSP |
-| Any | CPU fallback | XNNPACK |
+| Beliebig | CPU-Fallback | XNNPACK |
 
-## Related
+## Verwandte Projekte
 
-| Repository | Platform |
+| Repository | Plattform |
 | --- | --- |
 | [speech-swift](https://github.com/soniqo/speech-swift) | Apple (macOS, iOS) — MLX + CoreML |
-| [speech-core](https://github.com/soniqo/speech-core) | Cross-platform C++ pipeline engine |
-| **speech-android** | Android + embedded Linux — ONNX Runtime |
+| [speech-core](https://github.com/soniqo/speech-core) | Plattformübergreifende C++-Pipeline-Engine |
+| **speech-android** | Android + Embedded Linux — ONNX Runtime |
 
-## License
+## Lizenz
 
 Apache 2.0
