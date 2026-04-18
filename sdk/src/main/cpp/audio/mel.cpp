@@ -2,28 +2,53 @@
 #include "fft.h"
 #include <cmath>
 #include <algorithm>
+#include <cstdio>
 
-static float hz_to_mel(float hz) {
+// HTK mel scale (used when slaney_norm=false).
+static float htk_hz_to_mel(float hz) {
     return 2595.0f * std::log10(1.0f + hz / 700.0f);
 }
-
-static float mel_to_hz(float mel) {
+static float htk_mel_to_hz(float mel) {
     return 700.0f * (std::pow(10.0f, mel / 2595.0f) - 1.0f);
+}
+
+// Slaney mel scale (used when slaney_norm=true):
+//   Linear below 1000 Hz:  mel = 3 * f / 200
+//   Log above 1000 Hz:     mel = 15 + 27 * log(f/1000) / log(6.4)
+static constexpr float kSlaneyBreakHz = 1000.0f;
+static constexpr float kSlaneyBreakMel = 15.0f;      // 3 * 1000 / 200
+static constexpr float kSlaneyLogStep = 27.0f / std::log(6.4f);  // ≈ 14.536
+
+static float slaney_hz_to_mel(float hz) {
+    if (hz < kSlaneyBreakHz)
+        return 3.0f * hz / 200.0f;
+    return kSlaneyBreakMel + std::log(hz / kSlaneyBreakHz) * kSlaneyLogStep;
+}
+static float slaney_mel_to_hz(float mel) {
+    if (mel < kSlaneyBreakMel)
+        return 200.0f * mel / 3.0f;
+    return kSlaneyBreakHz * std::exp((mel - kSlaneyBreakMel) / kSlaneyLogStep);
 }
 
 static std::vector<float> mel_filterbank(
     int num_mel_bins, int n_fft, int sample_rate, bool slaney_norm)
 {
     int num_bins = n_fft / 2 + 1;
-    float mel_low = hz_to_mel(0.0f);
-    float mel_high = hz_to_mel(static_cast<float>(sample_rate) / 2.0f);
+
+    // Choose mel scale: Slaney (torchaudio default) when slaney_norm is on,
+    // HTK otherwise (backward compat).
+    auto hz2mel = slaney_norm ? slaney_hz_to_mel : htk_hz_to_mel;
+    auto mel2hz = slaney_norm ? slaney_mel_to_hz : htk_mel_to_hz;
+
+    float mel_low = hz2mel(0.0f);
+    float mel_high = hz2mel(static_cast<float>(sample_rate) / 2.0f);
 
     std::vector<float> mel_points(num_mel_bins + 2);
     // Hz centres of each mel point (for Slaney norm later).
     std::vector<float> hz_points(num_mel_bins + 2);
     for (int i = 0; i < num_mel_bins + 2; i++) {
         float mel = mel_low + (mel_high - mel_low) * i / (num_mel_bins + 1);
-        hz_points[i] = mel_to_hz(mel);
+        hz_points[i] = mel2hz(mel);
     }
 
     // Convert to FFT bin indices
@@ -75,6 +100,8 @@ std::vector<float> mel_spectrogram(
     const float* sig = audio;
     size_t sig_len = length;
 
+    std::fprintf(stderr, "[mel_spectrogram] length=%zu center=%d n_fft=%d\n",
+                 length, (int)center, n_fft);
     if (center) {
         int pad = n_fft / 2;
         sig_len = length + 2 * static_cast<size_t>(pad);
@@ -96,8 +123,13 @@ std::vector<float> mel_spectrogram(
     }
 
     int num_bins = n_fft / 2 + 1;
-    int num_frames = static_cast<int>((sig_len - static_cast<size_t>(win_length))
+    // Frame count uses n_fft (not win_length) to match torchaudio/librosa:
+    // each frame is n_fft samples; shorter windows are zero-padded.
+    int frame_len = center ? n_fft : win_length;
+    int num_frames = static_cast<int>((sig_len - static_cast<size_t>(frame_len))
                                       / hop_length) + 1;
+    std::fprintf(stderr, "[mel_spectrogram] sig_len=%zu frame_len=%d num_frames=%d\n",
+                 sig_len, frame_len, num_frames);
     if (num_frames <= 0) return {};
 
     auto fb = mel_filterbank(num_mel_bins, n_fft, sample_rate, slaney_norm);
