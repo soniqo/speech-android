@@ -2,7 +2,6 @@
 #include "fft.h"
 #include <cmath>
 #include <algorithm>
-#include <cstdio>
 
 // HTK mel scale (used when slaney_norm=false).
 static float htk_hz_to_mel(float hz) {
@@ -100,8 +99,6 @@ std::vector<float> mel_spectrogram(
     const float* sig = audio;
     size_t sig_len = length;
 
-    std::fprintf(stderr, "[mel_spectrogram] length=%zu center=%d n_fft=%d\n",
-                 length, (int)center, n_fft);
     if (center) {
         int pad = n_fft / 2;
         sig_len = length + 2 * static_cast<size_t>(pad);
@@ -128,8 +125,6 @@ std::vector<float> mel_spectrogram(
     int frame_len = center ? n_fft : win_length;
     int num_frames = static_cast<int>((sig_len - static_cast<size_t>(frame_len))
                                       / hop_length) + 1;
-    std::fprintf(stderr, "[mel_spectrogram] sig_len=%zu frame_len=%d num_frames=%d\n",
-                 sig_len, frame_len, num_frames);
     if (num_frames <= 0) return {};
 
     auto fb = mel_filterbank(num_mel_bins, n_fft, sample_rate, slaney_norm);
