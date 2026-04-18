@@ -120,10 +120,7 @@ std::vector<float> mel_spectrogram(
     }
 
     int num_bins = n_fft / 2 + 1;
-    // Frame count uses n_fft (not win_length) to match torchaudio/librosa:
-    // each frame is n_fft samples; shorter windows are zero-padded.
-    int frame_len = center ? n_fft : win_length;
-    int num_frames = static_cast<int>((sig_len - static_cast<size_t>(frame_len))
+    int num_frames = static_cast<int>((sig_len - static_cast<size_t>(win_length))
                                       / hop_length) + 1;
     if (num_frames <= 0) return {};
 
