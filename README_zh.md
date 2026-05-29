@@ -16,10 +16,10 @@
 
 | 模型 | 任务 | INT8 大小 | 语言 |
 | --- | --- | --- | --- |
-| [Parakeet TDT v3](https://huggingface.co/aufklarer/Parakeet-TDT-v3-ONNX) | 语音识别 | 891 MB | 114 |
-| [Kokoro 82M](https://huggingface.co/aufklarer/Kokoro-82M-ONNX) | 文本转语音 | 330 MB | 8(en、fr、es、it、pt、hi、ja、zh) |
-| [Silero VAD v5](https://huggingface.co/aufklarer/Silero-VAD-v5-ONNX) | 语音活动检测 | 2 MB | 任意 |
-| [DeepFilterNet3](https://huggingface.co/aufklarer/DeepFilterNet3-ONNX) | 噪声消除 | ~8 MB | 任意 |
+| [Parakeet TDT v3](https://huggingface.co/soniqo/Parakeet-TDT-v3-ONNX) | 语音识别 | 891 MB | 114 |
+| [Kokoro 82M](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | 文本转语音 | 330 MB | 8(en、fr、es、it、pt、hi、ja、zh) |
+| [Silero VAD v5](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | 语音活动检测 | 2 MB | 任意 |
+| [DeepFilterNet3](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | 噪声消除 | ~8 MB | 任意 |
 
 模型在首次启动时通过 `ModelManager.ensureModels()` 自动下载。
 

@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit
  */
 object ModelManager {
 
-    private const val BASE_URL = "https://huggingface.co/aufklarer"
+    private const val BASE_URL = "https://huggingface.co/soniqo"
 
     // Bump when models on HuggingFace are updated to trigger cache invalidation.
     private const val MODEL_VERSION = 2

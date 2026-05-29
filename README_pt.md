@@ -16,10 +16,10 @@ Este repositório é o **empacotamento Android**: SDK Kotlin, ponte JNI, app de 
 
 | Modelo | Tarefa | Tamanho INT8 | Idiomas |
 | --- | --- | --- | --- |
-| [Parakeet TDT v3](https://huggingface.co/aufklarer/Parakeet-TDT-v3-ONNX) | Reconhecimento de fala | 891 MB | 114 |
-| [Kokoro 82M](https://huggingface.co/aufklarer/Kokoro-82M-ONNX) | Texto para fala | 330 MB | 8 (en, fr, es, it, pt, hi, ja, zh) |
-| [Silero VAD v5](https://huggingface.co/aufklarer/Silero-VAD-v5-ONNX) | Detecção de atividade vocal | 2 MB | Qualquer |
-| [DeepFilterNet3](https://huggingface.co/aufklarer/DeepFilterNet3-ONNX) | Cancelamento de ruído | ~8 MB | Qualquer |
+| [Parakeet TDT v3](https://huggingface.co/soniqo/Parakeet-TDT-v3-ONNX) | Reconhecimento de fala | 891 MB | 114 |
+| [Kokoro 82M](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | Texto para fala | 330 MB | 8 (en, fr, es, it, pt, hi, ja, zh) |
+| [Silero VAD v5](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | Detecção de atividade vocal | 2 MB | Qualquer |
+| [DeepFilterNet3](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | Cancelamento de ruído | ~8 MB | Qualquer |
 
 Os modelos são baixados automaticamente no primeiro lançamento via `ModelManager.ensureModels()`.
 

@@ -16,10 +16,10 @@
 
 | Модель | Задача | Размер INT8 | Языки |
 | --- | --- | --- | --- |
-| [Parakeet TDT v3](https://huggingface.co/aufklarer/Parakeet-TDT-v3-ONNX) | Распознавание речи | 891 МБ | 114 |
-| [Kokoro 82M](https://huggingface.co/aufklarer/Kokoro-82M-ONNX) | Синтез речи | 330 МБ | 8 (en, fr, es, it, pt, hi, ja, zh) |
-| [Silero VAD v5](https://huggingface.co/aufklarer/Silero-VAD-v5-ONNX) | Определение голосовой активности | 2 МБ | Любой |
-| [DeepFilterNet3](https://huggingface.co/aufklarer/DeepFilterNet3-ONNX) | Шумоподавление | ~8 МБ | Любой |
+| [Parakeet TDT v3](https://huggingface.co/soniqo/Parakeet-TDT-v3-ONNX) | Распознавание речи | 891 МБ | 114 |
+| [Kokoro 82M](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | Синтез речи | 330 МБ | 8 (en, fr, es, it, pt, hi, ja, zh) |
+| [Silero VAD v5](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | Определение голосовой активности | 2 МБ | Любой |
+| [DeepFilterNet3](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | Шумоподавление | ~8 МБ | Любой |
 
 Модели загружаются автоматически при первом запуске через `ModelManager.ensureModels()`.
 

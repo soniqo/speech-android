@@ -16,10 +16,10 @@ Android के लिए ऑन-डिवाइस स्पीच SDK, [ONNX Ru
 
 | मॉडल | कार्य | INT8 आकार | भाषाएँ |
 | --- | --- | --- | --- |
-| [Parakeet TDT v3](https://huggingface.co/aufklarer/Parakeet-TDT-v3-ONNX) | स्पीच रिकग्निशन | 891 MB | 114 |
-| [Kokoro 82M](https://huggingface.co/aufklarer/Kokoro-82M-ONNX) | टेक्स्ट-टू-स्पीच | 330 MB | 8 (en, fr, es, it, pt, hi, ja, zh) |
-| [Silero VAD v5](https://huggingface.co/aufklarer/Silero-VAD-v5-ONNX) | वॉयस एक्टिविटी डिटेक्शन | 2 MB | कोई भी |
-| [DeepFilterNet3](https://huggingface.co/aufklarer/DeepFilterNet3-ONNX) | शोर रद्दीकरण | ~8 MB | कोई भी |
+| [Parakeet TDT v3](https://huggingface.co/soniqo/Parakeet-TDT-v3-ONNX) | स्पीच रिकग्निशन | 891 MB | 114 |
+| [Kokoro 82M](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | टेक्स्ट-टू-स्पीच | 330 MB | 8 (en, fr, es, it, pt, hi, ja, zh) |
+| [Silero VAD v5](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | वॉयस एक्टिविटी डिटेक्शन | 2 MB | कोई भी |
+| [DeepFilterNet3](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | शोर रद्दीकरण | ~8 MB | कोई भी |
 
 मॉडल पहले लॉन्च पर `ModelManager.ensureModels()` के माध्यम से स्वचालित रूप से डाउनलोड होते हैं।
 

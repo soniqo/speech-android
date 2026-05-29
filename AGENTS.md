@@ -64,10 +64,10 @@ echo "no" | avdmanager create avd -n speech_test -k "system-images;android-35-ex
 ONNX models hosted on HuggingFace under [`aufklarer/`](https://huggingface.co/aufklarer)
 org. INT8 quantized by default.
 
-- `aufklarer/Silero-VAD-v5-ONNX` — VAD
-- `aufklarer/Parakeet-TDT-v3-ONNX` — STT (114 languages, 8192 BPE vocab)
-- `aufklarer/Kokoro-82M-ONNX` — TTS + phonemizer dicts + voice embeddings
-- `aufklarer/DeepFilterNet3-ONNX` — noise enhancer
+- `soniqo/Silero-VAD-v5-ONNX` — VAD
+- `soniqo/Parakeet-TDT-v3-ONNX` — STT (114 languages, 8192 BPE vocab)
+- `soniqo/Kokoro-82M-ONNX` — TTS + phonemizer dicts + voice embeddings
+- `soniqo/DeepFilterNet3-ONNX` — noise enhancer
 
 `ModelManager.kt` handles download and caching. See speech-core's
 [`docs/models.md`](https://github.com/soniqo/speech-core/blob/main/docs/models.md)

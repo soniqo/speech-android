@@ -16,10 +16,10 @@ Ce dépôt fournit le **packaging Android** : SDK Kotlin, pont JNI, application 
 
 | Modèle | Tâche | Taille INT8 | Langues |
 | --- | --- | --- | --- |
-| [Parakeet TDT v3](https://huggingface.co/aufklarer/Parakeet-TDT-v3-ONNX) | Reconnaissance vocale | 891 Mo | 114 |
-| [Kokoro 82M](https://huggingface.co/aufklarer/Kokoro-82M-ONNX) | Synthèse vocale | 330 Mo | 8 (en, fr, es, it, pt, hi, ja, zh) |
-| [Silero VAD v5](https://huggingface.co/aufklarer/Silero-VAD-v5-ONNX) | Détection d'activité vocale | 2 Mo | Toutes |
-| [DeepFilterNet3](https://huggingface.co/aufklarer/DeepFilterNet3-ONNX) | Suppression de bruit | ~8 Mo | Toutes |
+| [Parakeet TDT v3](https://huggingface.co/soniqo/Parakeet-TDT-v3-ONNX) | Reconnaissance vocale | 891 Mo | 114 |
+| [Kokoro 82M](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | Synthèse vocale | 330 Mo | 8 (en, fr, es, it, pt, hi, ja, zh) |
+| [Silero VAD v5](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | Détection d'activité vocale | 2 Mo | Toutes |
+| [DeepFilterNet3](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | Suppression de bruit | ~8 Mo | Toutes |
 
 Les modèles sont téléchargés automatiquement au premier lancement via `ModelManager.ensureModels()`.
 
