@@ -22,7 +22,10 @@ object ModelManager {
     private const val BASE_URL = "https://huggingface.co/soniqo"
 
     // Bump when models on HuggingFace are updated to trigger cache invalidation.
-    private const val MODEL_VERSION = 3
+    // v4: Parakeet INT8 moved from Parakeet-TDT-v3-ONNX (INT64 decoder-joint) to
+    // Parakeet-TDT-0.6B-ONNX (INT32) to match speech-core; the filenames are
+    // unchanged, so this bump is required to evict the stale, incompatible files.
+    private const val MODEL_VERSION = 4
 
     private const val MAX_RETRIES = 5
     private const val RETRY_DELAY_MS = 2000L
@@ -47,10 +50,17 @@ object ModelManager {
 
         // STT — Parakeet (auto-detect) or Nemotron-3.5 multilingual.
         when (sttModel) {
+            // Parakeet-TDT-0.6B-ONNX (not the older Parakeet-TDT-v3-ONNX): its
+            // decoder-joint takes INT32 `targets`/`target_length`, matching what
+            // speech-core's ParakeetStt::tdt_decode now sends. The v3 export used
+            // INT64, so pairing it with the current engine aborts at runtime with
+            // "ORT: Unexpected input data type. Actual: (tensor(int32)),
+            // expected: (tensor(int64))". This also matches the repo already used
+            // for the FP32 external-data file below.
             SttModel.PARAKEET -> files += listOf(
-                ModelFile("Parakeet-TDT-v3-ONNX", "parakeet-encoder${suffix}.onnx"),
-                ModelFile("Parakeet-TDT-v3-ONNX", "parakeet-decoder-joint${suffix}.onnx"),
-                ModelFile("Parakeet-TDT-v3-ONNX", "vocab.json"),
+                ModelFile("Parakeet-TDT-0.6B-ONNX", "parakeet-encoder${suffix}.onnx"),
+                ModelFile("Parakeet-TDT-0.6B-ONNX", "parakeet-decoder-joint${suffix}.onnx"),
+                ModelFile("Parakeet-TDT-0.6B-ONNX", "vocab.json"),
             )
             SttModel.NEMOTRON_MULTILINGUAL -> {
                 val base = "Nemotron-3.5-ASR-Streaming-Multilingual-0.6B"
