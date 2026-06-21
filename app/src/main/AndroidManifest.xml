@@ -22,9 +22,15 @@
             </intent-filter>
         </activity>
 
-        <activity android:name=".MainActivity" android:exported="false" />
-        <activity android:name=".DictationActivity" android:exported="false" />
-        <activity android:name=".SpeechRecognizerTestActivity" android:exported="false" />
+        <!-- configChanges: handle rotation/UI changes in-place instead of
+             recreating the Activity, which would build a second SpeechPipeline
+             (heavy native models) and leak the old one. -->
+        <activity android:name=".MainActivity" android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden|uiMode" />
+        <activity android:name=".DictationActivity" android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden|uiMode" />
+        <activity android:name=".SpeechRecognizerTestActivity" android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden|uiMode" />
 
         <!-- Settings entry the system Voice-input picker opens via the gear -->
         <activity

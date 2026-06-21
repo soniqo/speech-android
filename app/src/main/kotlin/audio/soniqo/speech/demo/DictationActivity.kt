@@ -43,7 +43,7 @@ class DictationActivity : ComponentActivity() {
 
     private var pipeline: SpeechPipeline? = null
     private var audioRecord: AudioRecord? = null
-    private var recording = false
+    @Volatile private var recording = false
     private var pipelineStarted = false
     private var observingDownload = false
 
@@ -336,14 +336,24 @@ class DictationActivity : ComponentActivity() {
         val sr = 16000
         val bufSize = AudioRecord.getMinBufferSize(
             sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_FLOAT)
+        if (bufSize <= 0) {
+            statusView.text = "mic error (PCM_FLOAT unsupported)"
+            return
+        }
 
-        audioRecord = AudioRecord(
+        val record = AudioRecord(
             MediaRecorder.AudioSource.VOICE_RECOGNITION,
             sr, AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_FLOAT, bufSize * 4
         )
+        if (record.state != AudioRecord.STATE_INITIALIZED) {
+            record.release()
+            statusView.text = "mic init failed"
+            return
+        }
+        audioRecord = record
 
-        audioRecord?.startRecording()
+        record.startRecording()
         recording = true
         micButton.setTextColor(Color.parseColor("#4CAF50"))
         statusView.text = "listening..."
@@ -351,7 +361,11 @@ class DictationActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val buf = FloatArray(512)
             while (recording) {
-                val read = audioRecord?.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING) ?: -1
+                val read = try {
+                    audioRecord?.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING) ?: -1
+                } catch (_: IllegalStateException) {
+                    break  // AudioRecord released mid-read
+                }
                 if (read > 0) pipeline?.pushAudio(buf)
             }
         }
@@ -402,6 +416,16 @@ class DictationActivity : ComponentActivity() {
     // ---------------------------------------------------------------------------
     // Lifecycle
     // ---------------------------------------------------------------------------
+
+    override fun onStop() {
+        super.onStop()
+        // Release the mic when backgrounded so we don't hold it or drain battery.
+        if (recording) {
+            stopMicrophone()
+            micButton.setTextColor(Color.parseColor("#555555"))
+            statusView.text = "paused"
+        }
+    }
 
     override fun onDestroy() {
         stopMicrophone()

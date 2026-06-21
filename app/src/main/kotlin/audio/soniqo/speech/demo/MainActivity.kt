@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
     private var mediaPlayer: android.media.MediaPlayer? = null
-    private var recording = false
+    @Volatile private var recording = false
     private val ttsBuffer = mutableListOf<ByteArray>()
     private var lastTtsMs = 0f
     private var speechStartTime = 0L
@@ -366,6 +366,13 @@ class MainActivity : ComponentActivity() {
                                     val delayMs = (durationSec * 1000).toLong() + 200
                                     lifecycleScope.launch {
                                         kotlinx.coroutines.delay(delayMs)
+                                        // If the app was backgrounded during playback, onStop
+                                        // already released the mic — don't restart the pipeline
+                                        // in the background or paint a false "listening" state.
+                                        if (!lifecycle.currentState.isAtLeast(
+                                                androidx.lifecycle.Lifecycle.State.STARTED)) {
+                                            return@launch
+                                        }
                                         stopAudioTrack()
                                         micPaused = false
                                         p.stop()
@@ -701,49 +708,66 @@ class MainActivity : ComponentActivity() {
         val sampleRate = 16000
         val bufferSize = AudioRecord.getMinBufferSize(
             sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_FLOAT)
+        if (bufferSize <= 0) {
+            addSystemLine("mic unavailable (PCM_FLOAT unsupported, code $bufferSize)")
+            setStatus("mic error")
+            return
+        }
 
-        audioRecord = AudioRecord(
+        val record = AudioRecord(
             MediaRecorder.AudioSource.MIC, sampleRate,
             AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_FLOAT, bufferSize)
+        if (record.state != AudioRecord.STATE_INITIALIZED) {
+            record.release()
+            addSystemLine("mic init failed")
+            setStatus("mic error")
+            return
+        }
+        audioRecord = record
 
         recording = true
-        audioRecord?.startRecording()
-        android.util.Log.i("Speech", "Mic started, state=${audioRecord?.state}")
+        record.startRecording()
+        android.util.Log.i("Speech", "Mic started, state=${record.state}")
         setStatus("listening...")
         setMicColor("#4CAF50")
 
         // Record mic to file for debugging
         val recFile = java.io.File(filesDir, "mic_recording.raw")
-        val recStream = java.io.FileOutputStream(recFile)
 
         lifecycleScope.launch(Dispatchers.IO) {
-            val buffer = FloatArray(512)
             var totalFrames = 0L
             var maxPeak = 0f
-            while (recording) {
-                val read = audioRecord?.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING) ?: 0
-                if (read > 0) {
-                    if (!micPaused) {
-                        p.pushAudio(buffer)
+            // use{} guarantees the stream is closed even if the loop body throws.
+            java.io.FileOutputStream(recFile).use { recStream ->
+                val buffer = FloatArray(512)
+                while (recording) {
+                    val read = try {
+                        audioRecord?.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING) ?: 0
+                    } catch (_: IllegalStateException) {
+                        break  // AudioRecord released mid-read (stopped on another thread)
                     }
-                    val peak = if (micPaused) 0f else (buffer.take(read).maxOfOrNull { kotlin.math.abs(it) } ?: 0f)
-                    if (peak > maxPeak) maxPeak = peak
-                    vadView.addLevel(peak)
+                    if (read > 0) {
+                        if (!micPaused) {
+                            p.pushAudio(buffer)
+                        }
+                        val peak = if (micPaused) 0f else (buffer.take(read).maxOfOrNull { kotlin.math.abs(it) } ?: 0f)
+                        if (peak > maxPeak) maxPeak = peak
+                        vadView.addLevel(peak)
 
-                    // Save to file
-                    val bytes = java.nio.ByteBuffer.allocate(read * 4)
-                        .order(java.nio.ByteOrder.LITTLE_ENDIAN)
-                    bytes.asFloatBuffer().put(buffer, 0, read)
-                    recStream.write(bytes.array())
+                        // Save to file
+                        val bytes = java.nio.ByteBuffer.allocate(read * 4)
+                            .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                        bytes.asFloatBuffer().put(buffer, 0, read)
+                        recStream.write(bytes.array())
 
-                    totalFrames += read
-if (totalFrames % 16000 == 0L) {
-                        android.util.Log.i("Speech", "Mic: ${totalFrames/16000}s peak=${"%.4f".format(maxPeak)}")
-                        maxPeak = 0f
+                        totalFrames += read
+                        if (totalFrames % 16000 == 0L) {
+                            android.util.Log.i("Speech", "Mic: ${totalFrames/16000}s peak=${"%.4f".format(maxPeak)}")
+                            maxPeak = 0f
+                        }
                     }
                 }
             }
-            recStream.close()
             android.util.Log.i("Speech", "Mic stopped, recorded ${totalFrames} frames to ${recFile.absolutePath}")
         }
     }
@@ -756,16 +780,6 @@ if (totalFrames % 16000 == 0L) {
     }
 
     @Volatile private var micPaused = false
-
-    private fun pauseMicrophone() {
-        micPaused = true
-        android.util.Log.i("Speech", "Mic paused for TTS playback")
-    }
-
-    private fun resumeMicrophone() {
-        micPaused = false
-        android.util.Log.i("Speech", "Mic resumed after TTS playback")
-    }
 
     // ---------------------------------------------------------------------------
     // Helpers
@@ -784,6 +798,20 @@ if (totalFrames % 16000 == 0L) {
     // ---------------------------------------------------------------------------
     // Cleanup
     // ---------------------------------------------------------------------------
+
+    override fun onStop() {
+        super.onStop()
+        // Release the mic and stop playback when the app is no longer visible so
+        // we don't hold the microphone or drain the battery in the background.
+        // The model download (a foreground worker) is unaffected.
+        if (recording) {
+            stopMicrophone()
+            setStatus("tap to talk")
+            setMicColor("#555555")
+        }
+        micPaused = false
+        stopAudioTrack()
+    }
 
     override fun onDestroy() {
         stopMicrophone()
