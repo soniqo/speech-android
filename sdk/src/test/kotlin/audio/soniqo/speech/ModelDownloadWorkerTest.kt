@@ -49,7 +49,7 @@ class ModelDownloadWorkerTest {
     @Test
     fun doWork_success_returnsModelDirInOutputData() = runBlocking {
         coEvery {
-            ModelManager.ensureModels(any(), any(), any())
+            ModelManager.ensureModels(any(), any(), any(), any(), any())
         } returns "/fake/model/dir"
 
         val worker = TestListenableWorkerBuilder<ModelDownloadWorker>(context)
@@ -68,7 +68,7 @@ class ModelDownloadWorkerTest {
         // The worker should bubble transient network/disk failures up to
         // WorkManager so it reschedules with exponential backoff.
         coEvery {
-            ModelManager.ensureModels(any(), any(), any())
+            ModelManager.ensureModels(any(), any(), any(), any(), any())
         } throws IOException("network down")
 
         val worker = TestListenableWorkerBuilder<ModelDownloadWorker>(context).build()
@@ -83,7 +83,7 @@ class ModelDownloadWorkerTest {
         // — emit Failure with the message in outputData so the host activity
         // can surface a useful error.
         coEvery {
-            ModelManager.ensureModels(any(), any(), any())
+            ModelManager.ensureModels(any(), any(), any(), any(), any())
         } throws IllegalStateException("models corrupt")
 
         val worker = TestListenableWorkerBuilder<ModelDownloadWorker>(context).build()
@@ -97,7 +97,7 @@ class ModelDownloadWorkerTest {
     @Test
     fun doWork_invalidPrecisionInput_defaultsToInt8() = runBlocking {
         coEvery {
-            ModelManager.ensureModels(any(), any(), any())
+            ModelManager.ensureModels(any(), any(), any(), any(), any())
         } returns "/fake"
 
         val worker = TestListenableWorkerBuilder<ModelDownloadWorker>(context)
@@ -107,21 +107,21 @@ class ModelDownloadWorkerTest {
         worker.doWork()
 
         coVerify(exactly = 1) {
-            ModelManager.ensureModels(any(), ModelPrecision.INT8, any())
+            ModelManager.ensureModels(any(), ModelPrecision.INT8, any(), any(), any())
         }
     }
 
     @Test
     fun doWork_missingPrecisionInput_defaultsToInt8() = runBlocking {
         coEvery {
-            ModelManager.ensureModels(any(), any(), any())
+            ModelManager.ensureModels(any(), any(), any(), any(), any())
         } returns "/fake"
 
         val worker = TestListenableWorkerBuilder<ModelDownloadWorker>(context).build()
         worker.doWork()
 
         coVerify(exactly = 1) {
-            ModelManager.ensureModels(any(), ModelPrecision.INT8, any())
+            ModelManager.ensureModels(any(), ModelPrecision.INT8, any(), any(), any())
         }
     }
 

@@ -103,9 +103,16 @@ object ModelManager {
     data class Progress(
         val file: String,
         val bytesDownloaded: Long,
+        /** Total size of the file currently downloading, or 0 if unknown. */
+        val fileTotalBytes: Long,
         val totalFiles: Int,
         val completed: Int,
     )
+
+    // Report intra-file byte progress at most this often. Without throttling,
+    // downloadFile's 64 KB read loop fires the callback ~13k times for the
+    // ~840 MB encoder, flooding WorkManager's setProgress/setForeground.
+    private const val PROGRESS_REPORT_INTERVAL_BYTES = 1_000_000L
 
     /**
      * True iff every required model file for [precision] is already on disk
@@ -194,8 +201,8 @@ object ModelManager {
             dest.parentFile?.mkdirs()
 
             val url = "$BASE_URL/${model.repo}/resolve/main/${model.filename}"
-            downloadFile(url, dest) { bytes ->
-                onProgress?.invoke(Progress(model.filename, bytes, allFiles.size, completed))
+            downloadFile(url, dest) { bytes, fileTotal ->
+                onProgress?.invoke(Progress(model.filename, bytes, fileTotal, allFiles.size, completed))
             }
             completed++
         }
@@ -207,7 +214,7 @@ object ModelManager {
         dir.absolutePath
     }
 
-    private fun downloadFile(url: String, dest: File, onBytes: (Long) -> Unit) {
+    private fun downloadFile(url: String, dest: File, onBytes: (downloaded: Long, fileTotal: Long) -> Unit) {
         val tmp = File(dest.parentFile, "${dest.name}.tmp")
 
         var lastException: IOException? = null
@@ -241,17 +248,34 @@ object ModelManager {
                 val contentLength = body.contentLength()
                 val isResume = response.code == 206
 
+                // Full file size: on a 206 resume, contentLength is only the
+                // remaining range, so add what's already on disk. 0 means the
+                // server didn't advertise a length (progress stays file-count
+                // based for this file).
+                val fileTotal = when {
+                    contentLength <= 0 -> 0L
+                    isResume -> existingBytes + contentLength
+                    else -> contentLength
+                }
+
                 FileOutputStream(tmp, isResume).use { output ->
                     body.byteStream().use { input ->
                         val buf = ByteArray(65536)
                         var total = if (isResume) existingBytes else 0L
+                        var lastReported = -1L
+                        onBytes(total, fileTotal)
                         while (true) {
                             val n = input.read(buf)
                             if (n == -1) break
                             output.write(buf, 0, n)
                             total += n
-                            onBytes(total)
+                            // Throttle: only surface progress every ~1 MB.
+                            if (lastReported < 0 || total - lastReported >= PROGRESS_REPORT_INTERVAL_BYTES) {
+                                onBytes(total, fileTotal)
+                                lastReported = total
+                            }
                         }
+                        onBytes(total, fileTotal)
                     }
                 }
 

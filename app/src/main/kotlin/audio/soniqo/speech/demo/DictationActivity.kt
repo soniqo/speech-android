@@ -44,6 +44,8 @@ class DictationActivity : ComponentActivity() {
     private var pipeline: SpeechPipeline? = null
     private var audioRecord: AudioRecord? = null
     private var recording = false
+    private var pipelineStarted = false
+    private var observingDownload = false
 
     private lateinit var statusView: TextView
     private lateinit var micButton: TextView
@@ -179,12 +181,17 @@ class DictationActivity : ComponentActivity() {
         statusView.text = "initializing..."
 
         // Models download in a foreground worker so the transfer survives
-        // backgrounding the app. Activity just observes progress.
-        val workId = ModelDownloadWorker.enqueue(applicationContext, ModelPrecision.INT8)
+        // backgrounding the app. Enqueue (KEEP reuses any in-flight download)
+        // and observe by the UNIQUE name, not a fresh request id — the latter
+        // stays null forever when an existing run is reused (issue #30).
+        ModelDownloadWorker.enqueue(applicationContext, ModelPrecision.INT8)
+        if (observingDownload) return
+        observingDownload = true
         WorkManager.getInstance(applicationContext)
-            .getWorkInfoByIdLiveData(workId)
-            .observe(this) { info ->
-                if (info == null) return@observe
+            .getWorkInfosForUniqueWorkLiveData(ModelDownloadWorker.UNIQUE_NAME)
+            .observe(this) { infos ->
+                val info = infos.firstOrNull { !it.state.isFinished }
+                    ?: infos.lastOrNull() ?: return@observe
                 when (info.state) {
                     WorkInfo.State.ENQUEUED,
                     WorkInfo.State.BLOCKED,
@@ -193,7 +200,12 @@ class DictationActivity : ComponentActivity() {
                         if (total > 0) {
                             val file = info.progress.getString(ModelDownloadWorker.KEY_FILE) ?: ""
                             val done = info.progress.getInt(ModelDownloadWorker.KEY_COMPLETED, 0)
-                            statusView.text = "$file $done/$total"
+                            val bytes = info.progress.getLong(ModelDownloadWorker.KEY_BYTES_DOWNLOADED, 0L)
+                            val fileTotal = info.progress.getLong(ModelDownloadWorker.KEY_FILE_TOTAL_BYTES, 0L)
+                            val mb = if (fileTotal > 0)
+                                "${bytes / 1_000_000}/${fileTotal / 1_000_000} MB"
+                            else "${bytes / 1_000_000} MB"
+                            statusView.text = "$file  $mb  ·  $done/$total"
                         }
                     }
                     WorkInfo.State.SUCCEEDED -> {
@@ -202,7 +214,10 @@ class DictationActivity : ComponentActivity() {
                             statusView.text = "worker succeeded but no model dir"
                             return@observe
                         }
-                        initPipeline(modelDir)
+                        if (!pipelineStarted) {
+                            pipelineStarted = true
+                            initPipeline(modelDir)
+                        }
                     }
                     WorkInfo.State.FAILED -> {
                         val err = info.outputData.getString(ModelDownloadWorker.KEY_ERROR)

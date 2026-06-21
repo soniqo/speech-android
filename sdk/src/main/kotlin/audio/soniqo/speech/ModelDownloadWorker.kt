@@ -61,26 +61,36 @@ class ModelDownloadWorker(
             ?.let { runCatching { ModelPrecision.valueOf(it) }.getOrNull() }
             ?: ModelPrecision.INT8
 
-        runCatching { setForeground(buildForegroundInfo(0, 0, "Preparing speech models…")) }
+        runCatching { setForeground(buildForegroundInfo(0, "Preparing speech models…")) }
+
+        // Only rebuild the foreground notification when the integer percent or
+        // the file changes — the underlying progress callback is already
+        // throttled to ~1 MB, but re-posting a Notification on every tick still
+        // janks the main thread, so we coalesce to visible changes only.
+        var lastNotifiedPct = -1
+        var lastNotifiedFile = ""
 
         return try {
             val modelDir = ModelManager.ensureModels(applicationContext, precision) { p ->
-                val pct = if (p.totalFiles > 0) {
-                    (p.completed * 100 / p.totalFiles).coerceIn(0, 100)
-                } else 0
+                val pct = progressPercent(p.completed, p.totalFiles, p.bytesDownloaded, p.fileTotalBytes)
                 setProgressAsync(workDataOf(
                     KEY_FILE to p.file,
                     KEY_COMPLETED to p.completed,
                     KEY_TOTAL to p.totalFiles,
                     KEY_BYTES_DOWNLOADED to p.bytesDownloaded,
+                    KEY_FILE_TOTAL_BYTES to p.fileTotalBytes,
                     KEY_PERCENT to pct,
                 ))
-                runCatching {
-                    setForegroundAsync(buildForegroundInfo(
-                        completed = p.completed,
-                        total = p.totalFiles,
-                        text = "${p.file}  ${p.completed}/${p.totalFiles}",
-                    ))
+                if (pct != lastNotifiedPct || p.file != lastNotifiedFile) {
+                    lastNotifiedPct = pct
+                    lastNotifiedFile = p.file
+                    runCatching {
+                        setForegroundAsync(buildForegroundInfo(
+                            percent = pct,
+                            text = "${p.file}  ${formatMb(p.bytesDownloaded)}/${formatMb(p.fileTotalBytes)}" +
+                                "  ·  ${p.completed}/${p.totalFiles}",
+                        ))
+                    }
                 }
             }
             Result.success(workDataOf(KEY_MODEL_DIR to modelDir))
@@ -92,14 +102,14 @@ class ModelDownloadWorker(
         }
     }
 
-    private fun buildForegroundInfo(completed: Int, total: Int, text: String): ForegroundInfo {
+    private fun buildForegroundInfo(percent: Int, text: String): ForegroundInfo {
         ensureChannel()
-        val indeterminate = total <= 0
+        val indeterminate = percent <= 0
         val notif = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setContentTitle("Speech models")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setProgress(if (indeterminate) 100 else total, completed, indeterminate)
+            .setProgress(100, percent.coerceIn(0, 100), indeterminate)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -122,9 +132,38 @@ class ModelDownloadWorker(
         ).apply { description = "Progress for downloading on-device speech models" })
     }
 
+    private fun formatMb(bytes: Long): String =
+        if (bytes <= 0) "…" else "%.0f MB".format(bytes / 1_000_000.0)
+
     companion object {
         /** Pass to [WorkManager.enqueueUniqueWork] to dedupe concurrent downloads. */
         const val UNIQUE_NAME = "audio.soniqo.speech.modelDownload"
+
+        /**
+         * Download completion percent (0-100) that advances *continuously* as
+         * the current file streams, instead of only when a whole file lands.
+         * It is the count of fully-finished files plus the fraction of the
+         * file in flight, scaled over the total file count:
+         *
+         *     pct = ((completed + bytesDownloaded / fileTotalBytes) / totalFiles) * 100
+         *
+         * This keeps the progress bar moving through the dominant ~840 MB
+         * encoder (issue #30: "stuck at 0/16, 0%"). When [fileTotalBytes] is
+         * unknown (0) it degrades to the previous whole-file behaviour for
+         * that file only. Pure + side-effect free so it is unit-testable.
+         */
+        fun progressPercent(
+            completed: Int,
+            totalFiles: Int,
+            bytesDownloaded: Long,
+            fileTotalBytes: Long,
+        ): Int {
+            if (totalFiles <= 0) return 0
+            val fraction = if (fileTotalBytes > 0) {
+                (bytesDownloaded.toDouble() / fileTotalBytes).coerceIn(0.0, 1.0)
+            } else 0.0
+            return (((completed + fraction) / totalFiles) * 100.0).toInt().coerceIn(0, 100)
+        }
 
         // Input keys
         const val KEY_PRECISION = "precision"
@@ -138,6 +177,7 @@ class ModelDownloadWorker(
         const val KEY_COMPLETED = "completed"
         const val KEY_TOTAL = "totalFiles"
         const val KEY_BYTES_DOWNLOADED = "bytesDownloaded"
+        const val KEY_FILE_TOTAL_BYTES = "fileTotalBytes"
         const val KEY_PERCENT = "percent"
 
         private const val CHANNEL_ID = "audio.soniqo.speech.models"

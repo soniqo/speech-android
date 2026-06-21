@@ -1,0 +1,21 @@
+<!--
+    Launcher-icon foreground: a 5-bar audio waveform, echoing the in-app VAD
+    graph. Drawn as round-capped vertical strokes, centered within the
+    adaptive-icon safe zone (108x108 viewport, content kept inside ~[21,87]).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:strokeColor="#43A047" android:strokeWidth="8.5"
+        android:strokeLineCap="round" android:pathData="M34,46 L34,62" />
+    <path android:strokeColor="#66BB6A" android:strokeWidth="8.5"
+        android:strokeLineCap="round" android:pathData="M44,38 L44,70" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="8.5"
+        android:strokeLineCap="round" android:pathData="M54,28 L54,80" />
+    <path android:strokeColor="#66BB6A" android:strokeWidth="8.5"
+        android:strokeLineCap="round" android:pathData="M64,38 L64,70" />
+    <path android:strokeColor="#43A047" android:strokeWidth="8.5"
+        android:strokeLineCap="round" android:pathData="M74,46 L74,62" />
+</vector>

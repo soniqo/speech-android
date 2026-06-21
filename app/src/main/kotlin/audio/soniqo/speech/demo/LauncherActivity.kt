@@ -34,19 +34,19 @@ class LauncherActivity : ComponentActivity() {
         }
         root.addView(title)
 
+        // Note: do NOT finish() the picker here \u2014 keeping it on the back stack
+        // means Back from a mode screen returns to this menu instead of exiting
+        // the app (issue #30).
         root.addView(modeButton("Echo", "STT \u2192 TTS echo pipeline") {
             startActivity(Intent(this, MainActivity::class.java))
-            finish()
         })
 
         root.addView(modeButton("Dictation", "Real-time speech-to-text") {
             startActivity(Intent(this, DictationActivity::class.java))
-            finish()
         })
 
         root.addView(modeButton("Recognizer test", "Exercises android.speech.SpeechRecognizer") {
             startActivity(Intent(this, SpeechRecognizerTestActivity::class.java))
-            finish()
         })
 
         setContentView(root)

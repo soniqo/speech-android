@@ -46,6 +46,8 @@ class MainActivity : ComponentActivity() {
     private val ttsBuffer = mutableListOf<ByteArray>()
     private var lastTtsMs = 0f
     private var speechStartTime = 0L
+    private var pipelineStarted = false
+    private var observingDownload = false
 
     private lateinit var statusView: TextView
     private lateinit var micButton: TextView
@@ -219,25 +221,31 @@ class MainActivity : ComponentActivity() {
 
     private fun loadPipeline() {
         setStatus("initializing...")
+        downloadProgress.visibility = View.VISIBLE
+        downloadProgress.progress = 0
 
         // Models download in a foreground worker so the transfer survives
-        // backgrounding the app. Activity just observes progress.
-        val workId = ModelDownloadWorker.enqueue(applicationContext, ModelPrecision.INT8)
+        // backgrounding the app. Enqueue (KEEP reuses any in-flight download)
+        // and observe by the UNIQUE name — observing by a fresh request id
+        // would stay null forever whenever an existing run is reused (e.g. on
+        // rotation / re-entry), which looked like a hang. See issue #30.
+        ModelDownloadWorker.enqueue(applicationContext, ModelPrecision.INT8)
+        if (observingDownload) return
+        observingDownload = true
         WorkManager.getInstance(applicationContext)
-            .getWorkInfoByIdLiveData(workId)
-            .observe(this) { info ->
-                if (info == null) return@observe
+            .getWorkInfosForUniqueWorkLiveData(ModelDownloadWorker.UNIQUE_NAME)
+            .observe(this) { infos ->
+                val info = infos.firstOrNull { !it.state.isFinished }
+                    ?: infos.lastOrNull() ?: return@observe
                 when (info.state) {
                     WorkInfo.State.ENQUEUED,
                     WorkInfo.State.BLOCKED,
                     WorkInfo.State.RUNNING -> {
                         val total = info.progress.getInt(ModelDownloadWorker.KEY_TOTAL, 0)
                         if (total > 0) {
-                            val file = info.progress.getString(ModelDownloadWorker.KEY_FILE) ?: ""
-                            val done = info.progress.getInt(ModelDownloadWorker.KEY_COMPLETED, 0)
-                            val pct = info.progress.getInt(ModelDownloadWorker.KEY_PERCENT, 0)
-                            setStatus("$file $done/$total")
-                            downloadProgress.progress = pct
+                            setStatus(downloadStatus(info))
+                            downloadProgress.progress =
+                                info.progress.getInt(ModelDownloadWorker.KEY_PERCENT, 0)
                         }
                     }
                     WorkInfo.State.SUCCEEDED -> {
@@ -249,7 +257,10 @@ class MainActivity : ComponentActivity() {
                         }
                         downloadProgress.progress = 100
                         downloadProgress.visibility = View.GONE
-                        initPipeline(modelDir)
+                        if (!pipelineStarted) {
+                            pipelineStarted = true
+                            initPipeline(modelDir)
+                        }
                     }
                     WorkInfo.State.FAILED -> {
                         val err = info.outputData.getString(ModelDownloadWorker.KEY_ERROR)
@@ -261,6 +272,20 @@ class MainActivity : ComponentActivity() {
                     WorkInfo.State.CANCELLED -> setStatus("cancelled")
                 }
             }
+    }
+
+    /** "<file>  <done>/<total> MB  ·  <n>/<files>" from a worker progress payload. */
+    private fun downloadStatus(info: WorkInfo): String {
+        val file = info.progress.getString(ModelDownloadWorker.KEY_FILE) ?: ""
+        val done = info.progress.getInt(ModelDownloadWorker.KEY_COMPLETED, 0)
+        val total = info.progress.getInt(ModelDownloadWorker.KEY_TOTAL, 0)
+        val bytes = info.progress.getLong(ModelDownloadWorker.KEY_BYTES_DOWNLOADED, 0L)
+        val fileTotal = info.progress.getLong(ModelDownloadWorker.KEY_FILE_TOTAL_BYTES, 0L)
+        val mb = if (fileTotal > 0)
+            "${bytes / 1_000_000}/${fileTotal / 1_000_000} MB"
+        else
+            "${bytes / 1_000_000} MB"
+        return "$file  $mb  ·  $done/$total"
     }
 
     private fun initPipeline(modelDir: String) {
@@ -405,6 +430,7 @@ class MainActivity : ComponentActivity() {
     private fun retryInit() {
         statusView.setOnClickListener(null)
         statusView.setOnLongClickListener(null)
+        pipelineStarted = false
         loadPipeline()
     }
 
