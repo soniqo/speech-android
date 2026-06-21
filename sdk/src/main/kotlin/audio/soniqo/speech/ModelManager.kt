@@ -22,10 +22,11 @@ object ModelManager {
     private const val BASE_URL = "https://huggingface.co/soniqo"
 
     // Bump when models on HuggingFace are updated to trigger cache invalidation.
-    // v4: Parakeet INT8 moved from Parakeet-TDT-v3-ONNX (INT64 decoder-joint) to
-    // Parakeet-TDT-0.6B-ONNX (INT32) to match speech-core; the filenames are
-    // unchanged, so this bump is required to evict the stale, incompatible files.
-    private const val MODEL_VERSION = 4
+    // v5: Parakeet-TDT-v3-ONNX decoder-joint re-exported to INT32 inputs named
+    // `targets`/`target_length` (was INT64 `prednet_lengths_orig`) to match
+    // speech-core. Filenames are unchanged, so this bump evicts both the old
+    // INT64 v3 decoder and the interim English-only 0.6B set.
+    private const val MODEL_VERSION = 5
 
     private const val MAX_RETRIES = 5
     private const val RETRY_DELAY_MS = 2000L
@@ -50,17 +51,18 @@ object ModelManager {
 
         // STT — Parakeet (auto-detect) or Nemotron-3.5 multilingual.
         when (sttModel) {
-            // Parakeet-TDT-0.6B-ONNX (not the older Parakeet-TDT-v3-ONNX): its
-            // decoder-joint takes INT32 `targets`/`target_length`, matching what
-            // speech-core's ParakeetStt::tdt_decode now sends. The v3 export used
-            // INT64, so pairing it with the current engine aborts at runtime with
-            // "ORT: Unexpected input data type. Actual: (tensor(int32)),
-            // expected: (tensor(int64))". This also matches the repo already used
-            // for the FP32 external-data file below.
+            // Parakeet-TDT-v3-ONNX is the multilingual export (8192-token vocab
+            // with Cyrillic/Greek/accented Latin) — required for non-English STT.
+            // Its INT8 decoder-joint was re-exported so `targets`/`target_length`
+            // are INT32 (was INT64) and the length input is named `target_length`
+            // (was `prednet_lengths_orig`), matching speech-core's
+            // ParakeetStt::tdt_decode. (The Parakeet-TDT-0.6B-ONNX export is
+            // English-only — speaking e.g. Russian transliterates to Latin — so
+            // it must not be used for the default STT.)
             SttModel.PARAKEET -> files += listOf(
-                ModelFile("Parakeet-TDT-0.6B-ONNX", "parakeet-encoder${suffix}.onnx"),
-                ModelFile("Parakeet-TDT-0.6B-ONNX", "parakeet-decoder-joint${suffix}.onnx"),
-                ModelFile("Parakeet-TDT-0.6B-ONNX", "vocab.json"),
+                ModelFile("Parakeet-TDT-v3-ONNX", "parakeet-encoder${suffix}.onnx"),
+                ModelFile("Parakeet-TDT-v3-ONNX", "parakeet-decoder-joint${suffix}.onnx"),
+                ModelFile("Parakeet-TDT-v3-ONNX", "vocab.json"),
             )
             SttModel.NEMOTRON_MULTILINGUAL -> {
                 val base = "Nemotron-3.5-ASR-Streaming-Multilingual-0.6B"
