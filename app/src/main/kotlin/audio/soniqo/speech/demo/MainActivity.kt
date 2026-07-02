@@ -44,7 +44,6 @@ class MainActivity : ComponentActivity() {
     private var mediaPlayer: android.media.MediaPlayer? = null
     @Volatile private var recording = false
     private val ttsBuffer = mutableListOf<ByteArray>()
-    private var lastTtsMs = 0f
     private var speechStartTime = 0L
     private var pipelineStarted = false
     private var observingDownload = false
@@ -335,7 +334,6 @@ class MainActivity : ComponentActivity() {
 
                             is SpeechEvent.ResponseAudioDelta -> {
                                 ttsBuffer.add(event.audio)
-                                lastTtsMs = event.ttsMs
                                 // Save TTS audio for debugging
                                 try {
                                     java.io.File(filesDir, "tts_output.raw").appendBytes(event.audio)
@@ -346,7 +344,7 @@ class MainActivity : ComponentActivity() {
                                 android.util.Log.i("Speech", "ResponseDone -> TTS ready")
                                 val totalBytes = ttsBuffer.sumOf { it.size }
                                 val durationSec = totalBytes / 2f / TTS_SAMPLE_RATE
-                                addSystemLine("tts: ${"%.0f".format(lastTtsMs)}ms → ${"%.1f".format(durationSec)}s audio")
+                                addSystemLine("tts: ${"%.0f".format(event.ttsMs)}ms → ${"%.1f".format(durationSec)}s audio")
 
                                 if (isEmulator) {
                                     // Emulator: skip playback (QEMU audio kills mic)

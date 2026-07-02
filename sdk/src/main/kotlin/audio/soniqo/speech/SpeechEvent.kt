@@ -9,7 +9,7 @@ sealed class SpeechEvent {
     data object ResponseCreated : SpeechEvent()
     data object ResponseInterrupted : SpeechEvent()
     data class ResponseAudioDelta(val audio: ByteArray, val ttsMs: Float) : SpeechEvent()
-    data object ResponseDone : SpeechEvent()
+    data class ResponseDone(val ttsMs: Float) : SpeechEvent()
     data class Error(val message: String) : SpeechEvent()
 }
 

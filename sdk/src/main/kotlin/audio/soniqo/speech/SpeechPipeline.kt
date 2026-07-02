@@ -65,19 +65,14 @@ internal class SpeechPipelineImpl(config: SpeechConfig) : SpeechPipeline {
             type: Int, text: String?, audio: ByteArray?,
             confidence: Float, sttMs: Float, ttsMs: Float,
         ) {
-            val event = when (type) {
-                0  -> SpeechEvent.SessionCreated
-                1  -> SpeechEvent.SpeechStarted
-                2  -> SpeechEvent.SpeechEnded
-                3  -> SpeechEvent.PartialTranscription(text ?: "", confidence)
-                4  -> SpeechEvent.TranscriptionCompleted(text ?: "", confidence, sttMs)
-                5  -> SpeechEvent.ResponseCreated
-                6  -> SpeechEvent.ResponseInterrupted
-                7  -> audio?.let { SpeechEvent.ResponseAudioDelta(it, ttsMs) }
-                8  -> SpeechEvent.ResponseDone
-                11 -> SpeechEvent.Error(text ?: "unknown error")
-                else -> null
-            } ?: return
+            val event = nativeEventToSpeechEvent(
+                type = type,
+                text = text,
+                audio = audio,
+                confidence = confidence,
+                sttMs = sttMs,
+                ttsMs = ttsMs,
+            ) ?: return
 
             _events.tryEmit(event)
         }
@@ -129,4 +124,25 @@ internal class SpeechPipelineImpl(config: SpeechConfig) : SpeechPipeline {
             handle = 0
         }
     }
+}
+
+internal fun nativeEventToSpeechEvent(
+    type: Int,
+    text: String?,
+    audio: ByteArray?,
+    confidence: Float,
+    sttMs: Float,
+    ttsMs: Float,
+): SpeechEvent? = when (type) {
+    0  -> SpeechEvent.SessionCreated
+    1  -> SpeechEvent.SpeechStarted
+    2  -> SpeechEvent.SpeechEnded
+    3  -> SpeechEvent.PartialTranscription(text ?: "", confidence)
+    4  -> SpeechEvent.TranscriptionCompleted(text ?: "", confidence, sttMs)
+    5  -> SpeechEvent.ResponseCreated
+    6  -> SpeechEvent.ResponseInterrupted
+    7  -> audio?.let { SpeechEvent.ResponseAudioDelta(it, ttsMs) }
+    8  -> SpeechEvent.ResponseDone(ttsMs)
+    11 -> SpeechEvent.Error(text ?: "unknown error")
+    else -> null
 }
