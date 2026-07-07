@@ -3,6 +3,7 @@
 build/
 *.iml
 .idea/
+.vscode/
 local.properties
 
 # ONNX Runtime (downloaded by setup.sh)

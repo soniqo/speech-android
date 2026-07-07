@@ -12,6 +12,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Bundle
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
@@ -30,7 +31,10 @@ import audio.soniqo.speech.ModelPrecision
 import audio.soniqo.speech.SpeechConfig
 import audio.soniqo.speech.SpeechEvent
 import audio.soniqo.speech.SpeechPipeline
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -41,10 +45,11 @@ import kotlinx.coroutines.withContext
  */
 class DictationActivity : ComponentActivity() {
 
-    private var pipeline: SpeechPipeline? = null
+    @Volatile private var pipeline: SpeechPipeline? = null
     private var audioRecord: AudioRecord? = null
+    private var micJob: Job? = null
     @Volatile private var recording = false
-    private var pipelineStarted = false
+    @Volatile private var pipelineStarted = false
     private var observingDownload = false
 
     private lateinit var statusView: TextView
@@ -57,6 +62,10 @@ class DictationActivity : ComponentActivity() {
 
     private val transcript = StringBuilder()
     private var partialText = ""
+
+    internal var pipelineFactory: (SpeechConfig) -> SpeechPipeline = { config ->
+        SpeechPipeline(config)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -177,6 +186,10 @@ class DictationActivity : ComponentActivity() {
     // Pipeline
     // ---------------------------------------------------------------------------
 
+    private companion object {
+        private const val TAG = "DictationActivity"
+    }
+
     private fun loadPipeline() {
         statusView.text = "initializing..."
 
@@ -230,8 +243,12 @@ class DictationActivity : ComponentActivity() {
     }
 
     private fun initPipeline(modelDir: String) {
-        lifecycleScope.launch {
+        lifecycleScope.launch(Dispatchers.Default) {
             try {
+                withContext(Dispatchers.Main) {
+                    statusView.text = "loading models..."
+                }
+
                 val config = SpeechConfig(
                     modelDir = modelDir,
                     useNnapi = false,
@@ -240,7 +257,7 @@ class DictationActivity : ComponentActivity() {
                     partialTranscriptionInterval = 0.5f,
                 )
 
-                val p = SpeechPipeline(config)
+                val p = pipelineFactory(config)
                 pipeline = p
 
                 launch {
@@ -304,9 +321,12 @@ class DictationActivity : ComponentActivity() {
                     updateDisplay()
                 }
 
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                Log.e(TAG, "Dictation pipeline init failed", e)
+                pipelineStarted = false
                 withContext(Dispatchers.Main) {
-                    statusView.text = "error: ${e.message}"
+                    statusView.text = "error: ${e.message ?: e.javaClass.simpleName}"
                 }
             }
         }
@@ -358,23 +378,40 @@ class DictationActivity : ComponentActivity() {
         micButton.setTextColor(Color.parseColor("#4CAF50"))
         statusView.text = "listening..."
 
-        lifecycleScope.launch(Dispatchers.IO) {
+        micJob?.cancel()
+        micJob = lifecycleScope.launch(Dispatchers.IO) {
             val buf = FloatArray(512)
-            while (recording) {
+            while (recording && isActive) {
                 val read = try {
-                    audioRecord?.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING) ?: -1
+                    record.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
                 } catch (_: IllegalStateException) {
                     break  // AudioRecord released mid-read
                 }
-                if (read > 0) pipeline?.pushAudio(buf)
+                if (read > 0) {
+                    val samples = if (read == buf.size) buf else buf.copyOf(read)
+                    val p = pipeline ?: continue
+                    try {
+                        p.pushAudio(samples)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Ignoring mic frame after pipeline shutdown", e)
+                        break
+                    }
+                } else if (read < 0) {
+                    Log.w(TAG, "AudioRecord.read returned $read")
+                    break
+                }
             }
         }
     }
 
     private fun stopMicrophone() {
         recording = false
-        audioRecord?.stop()
-        audioRecord?.release()
+        micJob?.cancel()
+        micJob = null
+        audioRecord?.let { record ->
+            try { record.stop() } catch (_: Exception) {}
+            record.release()
+        }
         audioRecord = null
     }
 
@@ -429,8 +466,11 @@ class DictationActivity : ComponentActivity() {
 
     override fun onDestroy() {
         stopMicrophone()
-        pipeline?.stop()
-        pipeline?.close()
+        pipeline?.let { p ->
+            try { p.stop() } catch (_: Exception) {}
+            try { p.close() } catch (_: Exception) {}
+        }
+        pipeline = null
         super.onDestroy()
     }
 }
