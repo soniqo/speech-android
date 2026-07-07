@@ -90,6 +90,7 @@ open class SpeechRecognitionService : RecognitionService() {
         val wantPartial = recognizerIntent
             ?.getBooleanExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false) ?: false
         val requestedLang = recognizerIntent?.let(::requestedLanguageTag)
+        val languageHints = recognizerIntent?.let(::languageHintTags).orEmpty()
         if (requestedLang != null) {
             Log.i(TAG, "EXTRA_LANGUAGE=$requestedLang")
         }
@@ -110,7 +111,7 @@ open class SpeechRecognitionService : RecognitionService() {
 
         scope.launch {
             try {
-                startSession(listener, wantPartial, requestedLang)
+                startSession(listener, wantPartial, requestedLang, languageHints)
             } finally {
                 starting.set(false)
             }
@@ -121,6 +122,7 @@ open class SpeechRecognitionService : RecognitionService() {
         listener: Callback,
         wantPartial: Boolean,
         requestedLang: String?,
+        languageHints: List<String>,
     ) {
         val pipeline: SpeechPipeline
         val record: AudioRecord
@@ -130,6 +132,7 @@ open class SpeechRecognitionService : RecognitionService() {
                 SpeechConfig(
                     modelDir = modelDir,
                     language = requestedLang?.let(::languageBaseTag) ?: "auto",
+                    languageHints = languageHints,
                     emitPartialTranscriptions = wantPartial,
                 )
             )
@@ -435,6 +438,23 @@ open class SpeechRecognitionService : RecognitionService() {
                 intent.getStringExtra(RecognizerIntent.EXTRA_LANGUAGE),
                 intent.getStringExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE),
             ).firstNotNullOfOrNull { tag -> tag?.trim()?.takeIf { it.isNotEmpty() } }
+
+        internal fun languageHintTags(intent: Intent): List<String> {
+            val hints = linkedSetOf<String>()
+            requestedLanguageTag(intent)?.let { hints += languageBaseTag(it) }
+
+            listOf(
+                RecognizerIntent.EXTRA_LANGUAGE_DETECTION_ALLOWED_LANGUAGES,
+                RecognizerIntent.EXTRA_LANGUAGE_SWITCH_ALLOWED_LANGUAGES,
+            ).forEach { extra ->
+                intent.getStringArrayListExtra(extra)
+                    .orEmpty()
+                    .mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
+                    .filter(::isSupportedLanguageTag)
+                    .mapTo(hints, ::languageBaseTag)
+            }
+            return hints.toList()
+        }
 
         internal fun canonicalLanguageTag(tag: String): String {
             val normalized = tag.trim().replace('_', '-')

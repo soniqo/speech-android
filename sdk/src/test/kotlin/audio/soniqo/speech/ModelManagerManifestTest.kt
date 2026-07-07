@@ -45,6 +45,18 @@ class ModelManagerManifestTest {
     }
 
     @Test
+    fun modelDirName_separatesNonDefaultModelSets() {
+        assertEquals(
+            "models",
+            modelDirName(sttModel = SttModel.PARAKEET_EOU),
+        )
+        assertNotEquals(
+            modelDirName(sttModel = SttModel.PARAKEET_EOU),
+            modelDirName(sttModel = SttModel.PARAKEET),
+        )
+    }
+
+    @Test
     fun ttsOnlyManifest_usesKokoroFilesWithoutPipelineAssets() {
         val files = ttsModelFiles(TtsModel.KOKORO)
 
@@ -127,6 +139,29 @@ class ModelManagerManifestTest {
     ): String {
         val method = ModelManager::class.java.getDeclaredMethod(
             "modelSetKey",
+            ModelPrecision::class.java,
+            SttModel::class.java,
+            SttBackend::class.java,
+            TtsModel::class.java,
+        )
+        method.isAccessible = true
+        return method.invoke(
+            ModelManager,
+            precision,
+            sttModel,
+            sttBackend,
+            ttsModel,
+        ) as String
+    }
+
+    private fun modelDirName(
+        precision: ModelPrecision = ModelPrecision.INT8,
+        sttModel: SttModel = SttModel.PARAKEET_EOU,
+        sttBackend: SttBackend = SttBackend.ONNX,
+        ttsModel: TtsModel = TtsModel.KOKORO,
+    ): String {
+        val method = ModelManager::class.java.getDeclaredMethod(
+            "modelDirName",
             ModelPrecision::class.java,
             SttModel::class.java,
             SttBackend::class.java,

@@ -5,6 +5,10 @@ plugins {
     id("maven-publish")
 }
 
+val speechCoreDir = providers.gradleProperty("SPEECH_CORE_DIR")
+    .orElse("${project.rootDir}/speech-core")
+    .get()
+
 android {
     namespace = "audio.soniqo.speech"
     compileSdk = 35
@@ -17,7 +21,7 @@ android {
             cmake {
                 arguments += listOf(
                     "-DANDROID_STL=c++_shared",
-                    "-DSPEECH_CORE_DIR=${project.rootDir}/speech-core",
+                    "-DSPEECH_CORE_DIR=$speechCoreDir",
                     "-DORT_DIR=${project.rootDir}/ort",
                     // LiteRT runtime (fetched by setup.sh into /litert/<abi>/);
                     // enables the Nemotron multilingual LiteRT backend.

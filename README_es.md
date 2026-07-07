@@ -26,7 +26,9 @@ Este repositorio es el **empaquetado para Android**: SDK de Kotlin, puente JNI, 
 
 Los modelos se descargan automáticamente al primer inicio vía `ModelManager.ensureModels()`.
 
-`SpeechConfig()` usa `SttModel.PARAKEET_EOU` y `TtsModel.KOKORO` por defecto para mantener la demo y el reconocedor del sistema en la ruta Android de baja memoria. Usa `SpeechConfig(sttModel = SttModel.PARAKEET)` solo si necesitas el modelo TDT más grande de 114 idiomas.
+`SpeechConfig()` usa `SttModel.PARAKEET_EOU` y `TtsModel.KOKORO` por defecto para mantener las integraciones del SDK y el reconocedor del sistema en la ruta Android de baja memoria. La app demo opta por `SttModel.PARAKEET` para que las pantallas de eco y dictado usen el modelo TDT más grande de 114 idiomas.
+
+Para reconocimiento enfocado por idioma, usa `SpeechConfig(sttModel = SttModel.PARAKEET, languageHints = listOf("en", "fr"))`. Define `language = "en"` si quieres fijar un único idioma.
 
 **Supertonic-3** es un TTS multilingüe opcional de mayor calidad — selecciónalo con `SpeechConfig(ttsModel = TtsModel.SUPERTONIC)` (requiere el backend LiteRT). El host ejecuta sus cuatro grafos de flow-matching no autorregresivos en el dispositivo a 44.1 kHz; el front-end es G2P-free (NFKD + índice Unicode — sin fonemizador), por lo que los 31 idiomas pasan por una sola ruta.
 
@@ -85,6 +87,7 @@ El módulo [`app/`](app/) es una demo mínima de asistente de voz con:
 - Visualización de forma de onda VAD en tiempo real
 - Modo eco: transcribe la voz y la sintetiza de vuelta (sin LLM)
 - Modo dictado: resultados parciales en streaming
+- STT Parakeet TDT de 114 idiomas en las pantallas de eco y dictado
 - Pantalla de prueba `SpeechRecognizer` — ejercita la ruta de entrada de voz a nivel de sistema
 - UI de burbujas de chat con visualización de latencia STT/TTS
 

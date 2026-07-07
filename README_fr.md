@@ -26,7 +26,9 @@ Ce dépôt fournit le **packaging Android** : SDK Kotlin, pont JNI, application 
 
 Les modèles sont téléchargés automatiquement au premier lancement via `ModelManager.ensureModels()`.
 
-`SpeechConfig()` utilise `SttModel.PARAKEET_EOU` et `TtsModel.KOKORO` par défaut afin que la démo et le service de reconnaissance système restent sur le chemin Android à faible mémoire. Utilisez `SpeechConfig(sttModel = SttModel.PARAKEET)` uniquement si vous avez besoin du modèle TDT plus grand à 114 langues.
+`SpeechConfig()` utilise `SttModel.PARAKEET_EOU` et `TtsModel.KOKORO` par défaut afin que les intégrations SDK et le service de reconnaissance système restent sur le chemin Android à faible mémoire. L'application de démo sélectionne `SttModel.PARAKEET` pour que les écrans écho et dictée utilisent le modèle TDT plus grand à 114 langues.
+
+Pour une reconnaissance centrée sur certaines langues, utilisez `SpeechConfig(sttModel = SttModel.PARAKEET, languageHints = listOf("en", "fr"))`. Définissez `language = "en"` pour fixer une seule langue.
 
 **Supertonic-3** est une synthèse vocale multilingue de meilleure qualité, activable en option — sélectionnez-la avec `SpeechConfig(ttsModel = TtsModel.SUPERTONIC)` (nécessite le backend LiteRT). L'hôte exécute ses quatre graphes de flow-matching non autorégressifs en local à 44,1 kHz ; le front-end est G2P-free (NFKD + index Unicode — aucun phonémiseur), de sorte que les 31 langues passent par un seul chemin.
 
@@ -85,6 +87,7 @@ Le module [`app/`](app/) est une démo minimale d'assistant vocal avec :
 - Visualisation de la forme d'onde VAD en temps réel
 - Mode écho : transcrit la voix et la synthétise en retour (sans LLM)
 - Mode dictée : résultats partiels en streaming
+- STT Parakeet TDT à 114 langues dans les écrans écho et dictée
 - Écran de test `SpeechRecognizer` — exerce le chemin d'entrée vocale à l'échelle du système
 - Interface de bulles de chat avec affichage de la latence STT/TTS
 

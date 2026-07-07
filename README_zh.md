@@ -26,7 +26,9 @@
 
 模型在首次启动时通过 `ModelManager.ensureModels()` 自动下载。
 
-`SpeechConfig()` 默认使用 `SttModel.PARAKEET_EOU` 和 `TtsModel.KOKORO`,让演示应用和系统识别服务走低内存 Android 路径。只有在需要更大的 114 语言 TDT 模型时,才使用 `SpeechConfig(sttModel = SttModel.PARAKEET)`。
+`SpeechConfig()` 默认使用 `SttModel.PARAKEET_EOU` 和 `TtsModel.KOKORO`,让 SDK 集成和系统识别服务走低内存 Android 路径。演示应用会选用 `SttModel.PARAKEET`,使回声和听写界面使用更大的 114 语言 TDT 模型。
+
+需要聚焦特定语言时,使用 `SpeechConfig(sttModel = SttModel.PARAKEET, languageHints = listOf("en", "fr"))`。如果只想固定单一语言,设置 `language = "en"`。
 
 **Supertonic-3** 是可选启用的更高质量多语言 TTS — 通过 `SpeechConfig(ttsModel = TtsModel.SUPERTONIC)` 选用(需要 LiteRT 后端)。宿主在设备端以 44.1 kHz 运行其四个非自回归流匹配图;前端免 G2P(NFKD + Unicode 索引 — 无音素转换器),因此全部 31 种语言走同一条路径。
 
@@ -84,6 +86,7 @@ cd speech-android
 - 实时 VAD 波形可视化
 - 回声模式:转录语音并将其合成回放(无 LLM)
 - 听写模式:流式部分结果
+- 回声和听写界面使用 114 语言 Parakeet TDT STT
 - `SpeechRecognizer` 测试界面 — 演练系统级语音输入路径
 - 带有 STT/TTS 延迟显示的聊天气泡 UI
 

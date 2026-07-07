@@ -3,8 +3,8 @@ package audio.soniqo.speech
 enum class ModelPrecision { FP32, INT8 }
 
 /** On-device STT model. PARAKEET_EOU is the low-memory streaming default.
- *  PARAKEET is the larger TDT v3 model; NEMOTRON_MULTILINGUAL is
- *  prompt-conditioned and uses [SpeechConfig.language]. */
+ *  PARAKEET is the larger TDT v3 model with language-token detection;
+ *  NEMOTRON_MULTILINGUAL is prompt-conditioned and uses [SpeechConfig.language]. */
 enum class SttModel { PARAKEET, NEMOTRON_MULTILINGUAL, PARAKEET_EOU }
 
 /** Native inference backend for the STT model. Only Nemotron multilingual
@@ -32,9 +32,9 @@ data class SpeechConfig(
     /** Which TTS model to load. SUPERTONIC requires the LiteRT backend. */
     val ttsModel: TtsModel = TtsModel.KOKORO,
 
-    /** Language/locale prompt for prompt-conditioned models (Nemotron):
-     *  a key from languages.json, e.g. "en-US", "fr", "ja-JP". "auto" lets
-     *  the model decide. Ignored by auto-detecting models (Parakeet). */
+    /** Language/locale prompt for prompt-conditioned models and single-language
+     *  Parakeet TDT guidance: e.g. "en-US", "fr", "ja-JP". "auto" lets the
+     *  model decide, optionally constrained by [languageHints]. */
     val language: String = "auto",
 
     /** Enable noise cancellation (DeepFilterNet3). */
@@ -48,4 +48,9 @@ data class SpeechConfig(
 
     /** Interval between partial transcriptions in seconds. */
     val partialTranscriptionInterval: Float = 0.5f,
+
+    /** Optional language shortlist for Parakeet TDT language-token guidance.
+     *  Entries may be ISO codes or BCP-47 tags, e.g. listOf("en-US", "fr").
+     *  Ignored when [language] selects a concrete non-auto language. */
+    val languageHints: List<String> = emptyList(),
 )

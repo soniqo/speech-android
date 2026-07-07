@@ -32,6 +32,7 @@ import audio.soniqo.speech.ModelPrecision
 import audio.soniqo.speech.SpeechConfig
 import audio.soniqo.speech.SpeechEvent
 import audio.soniqo.speech.SpeechPipeline
+import audio.soniqo.speech.SttModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -57,6 +58,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TTS_SAMPLE_RATE = 24000
+        private val DEMO_STT_MODEL = SttModel.PARAKEET
         private val isEmulator = android.os.Build.FINGERPRINT.contains("generic")
                 || android.os.Build.MODEL.contains("Emulator")
                 || android.os.Build.MODEL.contains("sdk")
@@ -228,11 +230,17 @@ class MainActivity : ComponentActivity() {
         // and observe by the UNIQUE name — observing by a fresh request id
         // would stay null forever whenever an existing run is reused (e.g. on
         // rotation / re-entry), which looked like a hang. See issue #30.
-        ModelDownloadWorker.enqueue(applicationContext, ModelPrecision.INT8)
+        ModelDownloadWorker.enqueue(
+            applicationContext,
+            ModelPrecision.INT8,
+            sttModel = DEMO_STT_MODEL,
+        )
         if (observingDownload) return
         observingDownload = true
         WorkManager.getInstance(applicationContext)
-            .getWorkInfosForUniqueWorkLiveData(ModelDownloadWorker.UNIQUE_NAME)
+            .getWorkInfosForUniqueWorkLiveData(
+                ModelDownloadWorker.uniqueName(sttModel = DEMO_STT_MODEL)
+            )
             .observe(this) { infos ->
                 val info = infos.firstOrNull { !it.state.isFinished }
                     ?: infos.lastOrNull() ?: return@observe
@@ -293,6 +301,7 @@ class MainActivity : ComponentActivity() {
                 val config = SpeechConfig(
                     modelDir = modelDir,
                     useNnapi = !isEmulator,
+                    sttModel = DEMO_STT_MODEL,
                     precision = ModelPrecision.INT8,
                     emitPartialTranscriptions = true,
                 )

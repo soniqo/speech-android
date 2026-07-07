@@ -172,7 +172,7 @@ object ModelManager {
         sttBackend: SttBackend = SttBackend.ONNX,
         ttsModel: TtsModel = TtsModel.KOKORO,
     ): Boolean {
-        val dir = File(context.filesDir, "models")
+        val dir = modelDirFile(context, precision, sttModel, sttBackend, ttsModel)
         if (!dir.exists()) return false
 
         val versionFile = File(dir, "version.txt")
@@ -232,7 +232,7 @@ object ModelManager {
         ttsModel: TtsModel = TtsModel.KOKORO,
         onProgress: ((Progress) -> Unit)? = null,
     ): String = withContext(Dispatchers.IO) {
-        val dir = File(context.filesDir, "models")
+        val dir = modelDirFile(context, precision, sttModel, sttBackend, ttsModel)
         dir.mkdirs()
         File(dir, "voices").mkdirs()
 
@@ -335,6 +335,37 @@ object ModelManager {
         "backend=${sttBackend.name}",
         "tts=${ttsModel.name}",
     ).joinToString("|")
+
+    private fun modelDirFile(
+        context: Context,
+        precision: ModelPrecision,
+        sttModel: SttModel,
+        sttBackend: SttBackend,
+        ttsModel: TtsModel,
+    ): File = File(context.filesDir, modelDirName(precision, sttModel, sttBackend, ttsModel))
+
+    private fun modelDirName(
+        precision: ModelPrecision,
+        sttModel: SttModel,
+        sttBackend: SttBackend,
+        ttsModel: TtsModel,
+    ): String {
+        if (
+            precision == ModelPrecision.INT8 &&
+            sttModel == SttModel.PARAKEET_EOU &&
+            sttBackend == SttBackend.ONNX &&
+            ttsModel == TtsModel.KOKORO
+        ) {
+            return "models"
+        }
+        return listOf(
+            "models",
+            precision.name,
+            sttModel.name,
+            sttBackend.name,
+            ttsModel.name,
+        ).joinToString("-").lowercase()
+    }
 
     private fun ttsModelSetKey(ttsModel: TtsModel): String = listOf(
         "v$MODEL_VERSION",

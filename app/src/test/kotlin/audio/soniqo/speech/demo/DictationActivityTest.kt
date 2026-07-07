@@ -5,8 +5,10 @@ import audio.soniqo.speech.PipelineState
 import audio.soniqo.speech.SpeechConfig
 import audio.soniqo.speech.SpeechEvent
 import audio.soniqo.speech.SpeechPipeline
+import audio.soniqo.speech.SttModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -18,6 +20,7 @@ import org.robolectric.annotation.Config
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -31,7 +34,9 @@ class DictationActivityTest {
 
         val factoryCalled = CountDownLatch(1)
         val ranOnMainThread = AtomicBoolean(true)
-        activity.pipelineFactory = { _: SpeechConfig ->
+        val capturedConfig = AtomicReference<SpeechConfig>()
+        activity.pipelineFactory = { config: SpeechConfig ->
+            capturedConfig.set(config)
             ranOnMainThread.set(Looper.myLooper() == Looper.getMainLooper())
             factoryCalled.countDown()
             FakePipeline()
@@ -43,6 +48,7 @@ class DictationActivityTest {
             "DictationActivity must not load SpeechPipeline on the UI thread",
             ranOnMainThread.get(),
         )
+        assertEquals(SttModel.PARAKEET, capturedConfig.get()?.sttModel)
 
         controller.destroy()
     }

@@ -121,6 +121,36 @@ class SpeechRecognitionServiceTest {
     }
 
     @Test
+    fun startListening_allowedLanguagesArePassedAsHints() {
+        val intent = Intent().putStringArrayListExtra(
+            RecognizerIntent.EXTRA_LANGUAGE_DETECTION_ALLOWED_LANGUAGES,
+            arrayListOf("fr-FR", "de-DE", "ja-JP"),
+        )
+
+        service.startListening(intent, listener)
+
+        verify(timeout = 1500) { listener.readyForSpeech(any()) }
+        assertEquals("auto", service.lastConfig?.language)
+        assertEquals(listOf("fr", "de"), service.lastConfig?.languageHints)
+    }
+
+    @Test
+    fun startListening_requestedLanguageTakesPriorityOverAllowedLanguages() {
+        val intent = Intent()
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
+            .putStringArrayListExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_SWITCH_ALLOWED_LANGUAGES,
+                arrayListOf("fr-FR", "de-DE"),
+            )
+
+        service.startListening(intent, listener)
+
+        verify(timeout = 1500) { listener.readyForSpeech(any()) }
+        assertEquals("en", service.lastConfig?.language)
+        assertEquals(listOf("en", "fr", "de"), service.lastConfig?.languageHints)
+    }
+
+    @Test
     fun startListening_unsupportedLanguageReportsLanguageNotSupported() {
         val intent = Intent().putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ja-JP")
 
@@ -236,6 +266,21 @@ class SpeechRecognitionServiceTest {
         service.checkRecognitionSupport(intent, callback)
 
         verify { callback.onError(SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED) }
+    }
+
+    @Test
+    fun languageHintTags_deduplicatesAndFiltersUnsupportedLanguages() {
+        val intent = Intent()
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-US")
+            .putStringArrayListExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_DETECTION_ALLOWED_LANGUAGES,
+                arrayListOf("fr-FR", "en-GB", "ja-JP", "de-DE"),
+            )
+
+        assertEquals(
+            listOf("en", "fr", "de"),
+            SpeechRecognitionService.languageHintTags(intent),
+        )
     }
 
     @Test

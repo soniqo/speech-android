@@ -86,6 +86,7 @@ internal class SpeechPipelineImpl(config: SpeechConfig) : SpeechPipeline {
         config.sttBackend.ordinal,
         config.ttsModel.ordinal,
         config.language,
+        config.languageHints.toTypedArray(),
         nativeCallback,
         config.emitPartialTranscriptions,
         config.partialTranscriptionInterval,

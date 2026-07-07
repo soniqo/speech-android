@@ -31,6 +31,7 @@ import audio.soniqo.speech.ModelPrecision
 import audio.soniqo.speech.SpeechConfig
 import audio.soniqo.speech.SpeechEvent
 import audio.soniqo.speech.SpeechPipeline
+import audio.soniqo.speech.SttModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -188,6 +189,7 @@ class DictationActivity : ComponentActivity() {
 
     private companion object {
         private const val TAG = "DictationActivity"
+        private val DEMO_STT_MODEL = SttModel.PARAKEET
     }
 
     private fun loadPipeline() {
@@ -197,11 +199,17 @@ class DictationActivity : ComponentActivity() {
         // backgrounding the app. Enqueue (KEEP reuses any in-flight download)
         // and observe by the UNIQUE name, not a fresh request id — the latter
         // stays null forever when an existing run is reused (issue #30).
-        ModelDownloadWorker.enqueue(applicationContext, ModelPrecision.INT8)
+        ModelDownloadWorker.enqueue(
+            applicationContext,
+            ModelPrecision.INT8,
+            sttModel = DEMO_STT_MODEL,
+        )
         if (observingDownload) return
         observingDownload = true
         WorkManager.getInstance(applicationContext)
-            .getWorkInfosForUniqueWorkLiveData(ModelDownloadWorker.UNIQUE_NAME)
+            .getWorkInfosForUniqueWorkLiveData(
+                ModelDownloadWorker.uniqueName(sttModel = DEMO_STT_MODEL)
+            )
             .observe(this) { infos ->
                 val info = infos.firstOrNull { !it.state.isFinished }
                     ?: infos.lastOrNull() ?: return@observe
@@ -252,6 +260,7 @@ class DictationActivity : ComponentActivity() {
                 val config = SpeechConfig(
                     modelDir = modelDir,
                     useNnapi = false,
+                    sttModel = DEMO_STT_MODEL,
                     precision = ModelPrecision.INT8,
                     emitPartialTranscriptions = true,
                     partialTranscriptionInterval = 0.5f,

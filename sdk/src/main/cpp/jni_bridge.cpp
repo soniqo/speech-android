@@ -23,6 +23,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #define LOG_TAG "Speech"
@@ -183,6 +184,20 @@ static std::string jstring_to_string(JNIEnv* env, jstring js) {
     return s;
 }
 
+static std::vector<std::string> jstring_array_to_vector(JNIEnv* env, jobjectArray array) {
+    std::vector<std::string> out;
+    if (!array) return out;
+    const jsize n = env->GetArrayLength(array);
+    out.reserve(static_cast<size_t>(n));
+    for (jsize i = 0; i < n; ++i) {
+        auto item = static_cast<jstring>(env->GetObjectArrayElement(array, i));
+        std::string value = jstring_to_string(env, item);
+        if (!value.empty()) out.push_back(std::move(value));
+        if (item) env->DeleteLocalRef(item);
+    }
+    return out;
+}
+
 extern "C" {
 
 JNIEXPORT jlong JNICALL
@@ -190,6 +205,7 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
     JNIEnv* env, jobject /*thiz*/,
     jstring modelDir, jboolean useNnapi, jboolean useInt8,
     jint sttModel, jint sttBackend, jint ttsModel, jstring language,
+    jobjectArray languageHints,
     jobject callback,
     jboolean emitPartialTranscriptions, jfloat partialTranscriptionInterval)
 {
@@ -197,6 +213,7 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
     bool nnapi = useNnapi;
     std::string suffix = useInt8 ? "-int8" : "";
     std::string lang = jstring_to_string(env, language);
+    std::vector<std::string> lang_hints = jstring_array_to_vector(env, languageHints);
 
     auto h = std::make_unique<PipelineHandle>();
     env->GetJavaVM(&h->jvm);
@@ -241,11 +258,17 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
                 dir + "/vocab.json",
                 nnapi);
         } else {
-            h->stt = std::make_unique<speech_core::ParakeetStt>(
+            auto m = std::make_unique<speech_core::ParakeetStt>(
                 dir + "/parakeet-encoder" + suffix + ".onnx",
                 dir + "/parakeet-decoder-joint" + suffix + ".onnx",
                 dir + "/vocab.json",
                 nnapi);
+            if (lang != "auto" && !lang.empty()) {
+                m->set_language(lang);
+            } else if (!lang_hints.empty()) {
+                m->set_allowed_languages(lang_hints);
+            }
+            h->stt = std::move(m);
         }
         // TTS — Kokoro (ONNX, 24 kHz) or Supertonic-3 (LiteRT flow-matching, 44.1 kHz, G2P-free).
         h->tts = create_tts(dir, nnapi, ttsModel);

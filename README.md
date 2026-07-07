@@ -27,9 +27,13 @@ This repo is the **Android packaging**: Kotlin SDK, JNI bridge, demo app. The C+
 Models are downloaded automatically on first launch via `ModelManager.ensureModels()`.
 
 `SpeechConfig()` defaults to `SttModel.PARAKEET_EOU` and `TtsModel.KOKORO`
-to keep the demo and system recognizer on the low-memory Android path. Use
-`SpeechConfig(sttModel = SttModel.PARAKEET)` only when you need the larger
-114-language TDT model.
+to keep SDK integrations and the system recognizer on the low-memory Android
+path. The demo app opts into `SttModel.PARAKEET` so its echo and dictation
+screens exercise the larger 114-language TDT model.
+
+For language-focused recognition, use `SpeechConfig(sttModel = SttModel.PARAKEET,
+languageHints = listOf("en", "fr"))`. Set `language = "en"` when you want a
+single concrete language instead of a shortlist.
 
 **Supertonic-3** is an opt-in higher-quality multilingual TTS — select it with
 `SpeechConfig(ttsModel = TtsModel.SUPERTONIC)` (requires the LiteRT backend). The host runs its four
@@ -140,6 +144,7 @@ The [`app/`](app/) module is a minimal voice assistant demo with:
 - Real-time VAD waveform visualization
 - Echo mode: transcribes speech and synthesizes it back (no LLM)
 - Dictation mode: streaming partial results
+- 114-language Parakeet TDT STT in the echo and dictation screens
 - `SpeechRecognizer` test screen — exercises the system-wide voice input path
 - Chat bubble UI with STT/TTS latency display
 

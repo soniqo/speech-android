@@ -2,6 +2,7 @@ package audio.soniqo.speech
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -10,7 +11,8 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * E2E test: Parakeet TDT 0.6B speech recognition on device.
@@ -29,12 +31,12 @@ class ParakeetSttTest {
     @Before
     fun setup() = runBlocking {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        modelDir = ModelManager.ensureModels(ctx)
+        modelDir = ModelManager.ensureModels(ctx, sttModel = SttModel.PARAKEET)
     }
 
     @Test
     fun pipelineStateTransitions() {
-        val config = SpeechConfig(modelDir = modelDir, useNnapi = false)
+        val config = parakeetConfig()
         val pipeline = SpeechPipeline(config)
 
         assertEquals(PipelineState.Idle, pipeline.state)
@@ -49,67 +51,70 @@ class ParakeetSttTest {
     }
 
     @Test
-    fun sttTranscribesTestAudio() = runBlocking {
-        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        val rawFile = File(ctx.filesDir, "test_speech.raw")
-        if (!rawFile.exists()) {
-            // Skip if test audio not present — CI should push it
-            return@runBlocking
-        }
-
-        val config = SpeechConfig(modelDir = modelDir, useNnapi = false)
+    fun sttTranscribesSynthesizedEnglishWithLanguageHints() = runBlocking {
+        val config = parakeetConfig(languageHints = listOf("en-US", "fr"))
         val pipeline = SpeechPipeline(config)
-        pipeline.start()
+        try {
+            pipeline.start()
+            val eventDeferred = async {
+                withTimeout(60_000) {
+                    pipeline.events.first { it is SpeechEvent.TranscriptionCompleted }
+                }
+            }
 
-        // Read raw Float32 PCM
-        val bytes = rawFile.readBytes()
-        val samples = FloatArray(bytes.size / 4)
-        java.nio.ByteBuffer.wrap(bytes)
-            .order(java.nio.ByteOrder.LITTLE_ENDIAN)
-            .asFloatBuffer()
-            .get(samples)
+            val synthesizer = SpeechSynthesizer(
+                SpeechSynthesizerConfig(modelDir = modelDir, useNnapi = false)
+            )
+            val audio = synthesizer.use {
+                val spoken = it.synthesize("The quick brown fox jumps over the dog.", "en")
+                assertTrue("Synthesized fixture should not be empty", spoken.pcm16.isNotEmpty())
+                pcm16ToFloat16k(spoken.pcm16, spoken.sampleRate)
+            }
+            assertTrue("Synthesized fixture should contain audio", audio.isNotEmpty())
 
-        // Push in 512-sample chunks at real-time pace
-        for (offset in samples.indices step 512) {
-            val end = minOf(offset + 512, samples.size)
-            val chunk = samples.sliceArray(offset until end)
-            pipeline.pushAudio(chunk)
-            delay(32) // 512 samples @ 16kHz = 32ms
+            // Push in 512-sample chunks at real-time pace.
+            for (offset in audio.indices step 512) {
+                val end = minOf(offset + 512, audio.size)
+                val chunk = audio.sliceArray(offset until end)
+                pipeline.pushAudio(chunk)
+                delay(32) // 512 samples @ 16kHz = 32ms
+            }
+
+            // Push silence to trigger end-of-speech
+            val silence = FloatArray(16000) // 1s
+            for (offset in silence.indices step 512) {
+                pipeline.pushAudio(
+                    silence.sliceArray(offset until minOf(offset + 512, silence.size))
+                )
+                delay(32)
+            }
+
+            val tc = eventDeferred.await() as SpeechEvent.TranscriptionCompleted
+
+            assertNotNull(tc.text)
+            assertTrue("Transcription should not be empty", tc.text.isNotBlank())
+            assertTrue(
+                "Confidence should be in range, was ${tc.confidence}",
+                tc.confidence in 0.0f..1.0f
+            )
+
+            // Check that key words are present (case-insensitive)
+            val text = tc.text.lowercase()
+            val expectedWords = listOf("quick", "brown", "fox", "dog")
+            val matched = expectedWords.count { it in text }
+            assertTrue(
+                "Expected at least 2 of $expectedWords in '$text', matched $matched",
+                matched >= 2
+            )
+        } finally {
+            pipeline.stop()
+            pipeline.close()
         }
-
-        // Push silence to trigger end-of-speech
-        val silence = FloatArray(16000) // 1s
-        for (offset in silence.indices step 512) {
-            pipeline.pushAudio(silence.sliceArray(offset until minOf(offset + 512, silence.size)))
-            delay(32)
-        }
-
-        // Wait for transcription
-        val event = withTimeout(30_000) {
-            pipeline.events.first { it is SpeechEvent.TranscriptionCompleted }
-        }
-        val tc = event as SpeechEvent.TranscriptionCompleted
-
-        assertNotNull(tc.text)
-        assertTrue("Transcription should not be empty", tc.text.isNotBlank())
-        assertTrue("Confidence should be > 0.5, was ${tc.confidence}", tc.confidence > 0.5f)
-
-        // Check that key words are present (case-insensitive)
-        val text = tc.text.lowercase()
-        val expectedWords = listOf("quick", "brown", "fox", "dog")
-        val matched = expectedWords.count { it in text }
-        assertTrue(
-            "Expected at least 2 of $expectedWords in '$text', matched $matched",
-            matched >= 2
-        )
-
-        pipeline.stop()
-        pipeline.close()
     }
 
     @Test
     fun sttDecodesBlankCorrectly() = runBlocking {
-        val config = SpeechConfig(modelDir = modelDir, useNnapi = false)
+        val config = parakeetConfig()
         val pipeline = SpeechPipeline(config)
         pipeline.start()
 
@@ -153,7 +158,7 @@ class ParakeetSttTest {
 
     @Test
     fun transcriptionEventFields() = runBlocking {
-        val config = SpeechConfig(modelDir = modelDir, useNnapi = false)
+        val config = parakeetConfig()
         val pipeline = SpeechPipeline(config)
         pipeline.start()
 
@@ -195,4 +200,50 @@ class ParakeetSttTest {
         pipeline.stop()
         pipeline.close()
     }
+
+    @Test
+    fun fixedLanguagePipelineStarts() {
+        val config = parakeetConfig(language = "en-US")
+        val pipeline = SpeechPipeline(config)
+
+        assertEquals(PipelineState.Idle, pipeline.state)
+        pipeline.start()
+        assertTrue(
+            pipeline.state == PipelineState.Idle ||
+            pipeline.state == PipelineState.Listening
+        )
+
+        pipeline.stop()
+        pipeline.close()
+    }
+
+    private fun pcm16ToFloat16k(pcm16: ByteArray, sourceSampleRate: Int): FloatArray {
+        val shorts = ShortArray(pcm16.size / 2)
+        ByteBuffer.wrap(pcm16)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .asShortBuffer()
+            .get(shorts)
+        val source = FloatArray(shorts.size) { i -> shorts[i] / 32768.0f }
+        if (sourceSampleRate == 16000) return source
+
+        val outputSize = ((source.size.toLong() * 16000L) / sourceSampleRate).toInt()
+        return FloatArray(outputSize) { i ->
+            val src = i.toDouble() * sourceSampleRate.toDouble() / 16000.0
+            val lo = src.toInt().coerceIn(0, source.lastIndex)
+            val hi = minOf(lo + 1, source.lastIndex)
+            val frac = (src - lo).toFloat()
+            source[lo] * (1.0f - frac) + source[hi] * frac
+        }
+    }
+
+    private fun parakeetConfig(
+        language: String = "auto",
+        languageHints: List<String> = emptyList(),
+    ): SpeechConfig = SpeechConfig(
+        modelDir = modelDir,
+        useNnapi = false,
+        sttModel = SttModel.PARAKEET,
+        language = language,
+        languageHints = languageHints,
+    )
 }

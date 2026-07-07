@@ -26,7 +26,9 @@
 
 모델은 `ModelManager.ensureModels()`를 통해 첫 실행 시 자동으로 다운로드됩니다.
 
-`SpeechConfig()`는 `SttModel.PARAKEET_EOU`와 `TtsModel.KOKORO`를 기본값으로 사용해 데모와 시스템 인식 서비스를 저메모리 Android 경로에서 실행합니다. 더 큰 114개 언어 TDT 모델이 필요할 때만 `SpeechConfig(sttModel = SttModel.PARAKEET)`를 사용하세요.
+`SpeechConfig()`는 `SttModel.PARAKEET_EOU`와 `TtsModel.KOKORO`를 기본값으로 사용해 SDK 통합과 시스템 인식 서비스를 저메모리 Android 경로에서 실행합니다. 데모 앱은 `SttModel.PARAKEET`를 선택해 에코와 받아쓰기 화면에서 더 큰 114개 언어 TDT 모델을 사용합니다.
+
+언어 중심 인식에는 `SpeechConfig(sttModel = SttModel.PARAKEET, languageHints = listOf("en", "fr"))`를 사용하세요. 하나의 언어로 고정하려면 `language = "en"`을 설정하세요.
 
 **Supertonic-3**는 옵트인 방식의 더 높은 품질의 다국어 TTS입니다 — `SpeechConfig(ttsModel = TtsModel.SUPERTONIC)`로 선택하세요(LiteRT 백엔드가 필요합니다). 호스트는 4개의 비자기회귀(non-autoregressive) flow-matching 그래프를 44.1 kHz로 온디바이스에서 실행합니다. 프런트엔드는 G2P-free(NFKD + 유니코드 인덱스 — 음소 변환기 없음)이므로 31개 언어 모두 하나의 경로를 통과합니다.
 
@@ -85,6 +87,7 @@ cd speech-android
 - 실시간 VAD 파형 시각화
 - 에코 모드: 음성을 전사하고 다시 합성(LLM 없음)
 - 받아쓰기 모드: 스트리밍 부분 결과
+- 에코와 받아쓰기 화면에서 114개 언어 Parakeet TDT STT 사용
 - `SpeechRecognizer` 테스트 화면 — 시스템 전체 음성 입력 경로 실행
 - STT/TTS 지연 시간 표시가 있는 채팅 버블 UI
 

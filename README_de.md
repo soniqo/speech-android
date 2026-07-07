@@ -26,7 +26,9 @@ Dieses Repo ist das **Android-Packaging**: Kotlin-SDK, JNI-Bridge, Demo-App. Die
 
 Modelle werden beim ersten Start automatisch über `ModelManager.ensureModels()` heruntergeladen.
 
-`SpeechConfig()` verwendet standardmäßig `SttModel.PARAKEET_EOU` und `TtsModel.KOKORO`, damit Demo und Systemerkennung den speicherarmen Android-Pfad nutzen. Verwende `SpeechConfig(sttModel = SttModel.PARAKEET)` nur, wenn das größere TDT-Modell mit 114 Sprachen benötigt wird.
+`SpeechConfig()` verwendet standardmäßig `SttModel.PARAKEET_EOU` und `TtsModel.KOKORO`, damit SDK-Integrationen und Systemerkennung den speicherarmen Android-Pfad nutzen. Die Demo-App wählt `SttModel.PARAKEET`, sodass Echo- und Diktieransicht das größere TDT-Modell mit 114 Sprachen verwenden.
+
+Für sprachfokussierte Erkennung verwende `SpeechConfig(sttModel = SttModel.PARAKEET, languageHints = listOf("en", "fr"))`. Setze `language = "en"`, wenn genau eine Sprache fest vorgegeben werden soll.
 
 **Supertonic-3** ist ein optionales, höherwertiges mehrsprachiges TTS — wähle es mit `SpeechConfig(ttsModel = TtsModel.SUPERTONIC)` aus (erfordert das LiteRT-Backend). Der Host führt seine vier nicht-autoregressiven Flow-Matching-Graphen mit 44,1 kHz auf dem Gerät aus; das Front-End ist G2P-frei (NFKD + Unicode-Index — kein Phonemizer), sodass alle 31 Sprachen über einen einzigen Pfad laufen.
 
@@ -85,6 +87,7 @@ Das Modul [`app/`](app/) ist eine minimale Sprachassistenten-Demo mit:
 - Echtzeit-VAD-Wellenformvisualisierung
 - Echo-Modus: transkribiert Sprache und synthetisiert sie zurück (kein LLM)
 - Diktiermodus: Streaming-Teilergebnisse
+- Parakeet TDT STT mit 114 Sprachen in Echo- und Diktieransicht
 - `SpeechRecognizer`-Testbildschirm — übt den systemweiten Spracheingabepfad aus
 - Chat-Bubble-UI mit STT/TTS-Latenzanzeige
 

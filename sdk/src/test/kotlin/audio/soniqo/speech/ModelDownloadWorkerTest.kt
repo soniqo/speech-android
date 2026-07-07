@@ -12,6 +12,7 @@ import io.mockk.unmockkAll
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -126,18 +127,87 @@ class ModelDownloadWorkerTest {
     }
 
     @Test
-    fun request_buildsRequestWithPrecisionInputDataAndNoNetworkConstraint() {
-        val req = ModelDownloadWorker.request(ModelPrecision.INT8)
+    fun doWork_modelInputs_arePassedToModelManager() = runBlocking {
+        coEvery {
+            ModelManager.ensureModels(any(), any(), any(), any(), any(), any())
+        } returns "/fake"
+
+        val worker = TestListenableWorkerBuilder<ModelDownloadWorker>(context)
+            .setInputData(workDataOf(
+                ModelDownloadWorker.KEY_PRECISION to "INT8",
+                ModelDownloadWorker.KEY_STT_MODEL to "PARAKEET",
+                ModelDownloadWorker.KEY_STT_BACKEND to "ONNX",
+                ModelDownloadWorker.KEY_TTS_MODEL to "SUPERTONIC",
+            ))
+            .build()
+
+        worker.doWork()
+
+        coVerify(exactly = 1) {
+            ModelManager.ensureModels(
+                any(),
+                ModelPrecision.INT8,
+                SttModel.PARAKEET,
+                SttBackend.ONNX,
+                TtsModel.SUPERTONIC,
+                any(),
+            )
+        }
+    }
+
+    @Test
+    fun request_buildsRequestWithModelInputDataAndNoNetworkConstraint() {
+        val req = ModelDownloadWorker.request(
+            precision = ModelPrecision.INT8,
+            sttModel = SttModel.PARAKEET,
+            sttBackend = SttBackend.ONNX,
+            ttsModel = TtsModel.KOKORO,
+        )
 
         assertEquals(
             "INT8",
             req.workSpec.input.getString(ModelDownloadWorker.KEY_PRECISION),
+        )
+        assertEquals(
+            "PARAKEET",
+            req.workSpec.input.getString(ModelDownloadWorker.KEY_STT_MODEL),
+        )
+        assertEquals(
+            "ONNX",
+            req.workSpec.input.getString(ModelDownloadWorker.KEY_STT_BACKEND),
+        )
+        assertEquals(
+            "KOKORO",
+            req.workSpec.input.getString(ModelDownloadWorker.KEY_TTS_MODEL),
         )
         // No JobScheduler network constraint — the worker handles network
         // failures itself via IOException → retry. See KDoc on `request()`.
         assertEquals(
             androidx.work.NetworkType.NOT_REQUIRED,
             req.workSpec.constraints.requiredNetworkType,
+        )
+    }
+
+    @Test
+    fun uniqueName_includesNonDefaultModelSet() {
+        assertEquals(
+            ModelDownloadWorker.UNIQUE_NAME,
+            ModelDownloadWorker.uniqueName(),
+        )
+        assertNotEquals(
+            ModelDownloadWorker.UNIQUE_NAME,
+            ModelDownloadWorker.uniqueName(precision = ModelPrecision.FP32),
+        )
+        assertNotEquals(
+            ModelDownloadWorker.UNIQUE_NAME,
+            ModelDownloadWorker.uniqueName(sttModel = SttModel.PARAKEET),
+        )
+        assertNotEquals(
+            ModelDownloadWorker.uniqueName(sttModel = SttModel.PARAKEET),
+            ModelDownloadWorker.uniqueName(
+                precision = ModelPrecision.FP32,
+                sttModel = SttModel.PARAKEET,
+            ),
         )
     }
 }

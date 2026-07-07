@@ -13,7 +13,8 @@ internal object NativeBridge {
         sttModel: Int,    // SttModel.ordinal: 0=PARAKEET, 1=NEMOTRON_MULTILINGUAL, 2=PARAKEET_EOU
         sttBackend: Int,  // SttBackend.ordinal: 0=ONNX, 1=LITERT
         ttsModel: Int,    // TtsModel.ordinal: 0=KOKORO, 1=SUPERTONIC (LiteRT)
-        language: String, // prompt locale for Nemotron ("auto", "en-US", ...)
+        language: String, // single language hint ("auto", "en-US", ...)
+        languageHints: Array<String>, // shortlist for Parakeet TDT language-token guidance
         callback: EventCallback,
         emitPartialTranscriptions: Boolean,
         partialTranscriptionInterval: Float,
