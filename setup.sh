@@ -4,7 +4,7 @@ set -euo pipefail
 # Setup script for speech-android development environment.
 # Downloads ONNX Runtime and initializes the speech-core submodule.
 
-ORT_VERSION="1.19.0"
+ORT_VERSION="1.27.0"
 ORT_URL="https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/${ORT_VERSION}/onnxruntime-android-${ORT_VERSION}.aar"
 
 # LiteRT (TFLite) runtime — Google's libLiteRt C API, matching speech-core's
@@ -29,8 +29,16 @@ fi
 
 # --- ONNX Runtime ---
 
-if [ ! -f "${ORT_DIR}/include/onnxruntime_c_api.h" ]; then
+ORT_INSTALLED_VERSION=""
+if [ -f "${ORT_DIR}/version.txt" ]; then
+    ORT_INSTALLED_VERSION="$(cat "${ORT_DIR}/version.txt")"
+fi
+
+if [ ! -f "${ORT_DIR}/include/onnxruntime_c_api.h" ] || \
+   [ ! -f "${ORT_DIR}/include/onnxruntime_ep_c_api.h" ] || \
+   [ "${ORT_INSTALLED_VERSION}" != "${ORT_VERSION}" ]; then
     echo "Downloading ONNX Runtime ${ORT_VERSION}..."
+    rm -rf "$ORT_DIR"
 
     TMP_DIR=$(mktemp -d)
     AAR_FILE="${TMP_DIR}/onnxruntime.aar"
@@ -50,11 +58,18 @@ if [ ! -f "${ORT_DIR}/include/onnxruntime_c_api.h" ]; then
         cp -r headers/* "${ORT_DIR}/include/" 2>/dev/null || true
     fi
 
-    # If headers aren't in AAR, download them separately
-    if [ ! -f "${ORT_DIR}/include/onnxruntime_c_api.h" ]; then
+    # If headers aren't in AAR, download them separately. Newer ORT C headers
+    # include companion headers from the same directory.
+    if [ ! -f "${ORT_DIR}/include/onnxruntime_c_api.h" ] || \
+       [ ! -f "${ORT_DIR}/include/onnxruntime_ep_c_api.h" ]; then
         mkdir -p "${ORT_DIR}/include"
-        HEADER_URL="https://raw.githubusercontent.com/microsoft/onnxruntime/v${ORT_VERSION}/include/onnxruntime/core/session/onnxruntime_c_api.h"
-        curl -L -o "${ORT_DIR}/include/onnxruntime_c_api.h" "$HEADER_URL"
+        for header in \
+            onnxruntime_c_api.h \
+            onnxruntime_ep_c_api.h \
+            onnxruntime_float16.h; do
+            HEADER_URL="https://raw.githubusercontent.com/microsoft/onnxruntime/v${ORT_VERSION}/include/onnxruntime/core/session/${header}"
+            curl -L -o "${ORT_DIR}/include/${header}" "$HEADER_URL"
+        done
     fi
 
     # Native shared libraries
@@ -66,10 +81,11 @@ if [ ! -f "${ORT_DIR}/include/onnxruntime_c_api.h" ]; then
         fi
     done
 
+    echo "${ORT_VERSION}" > "${ORT_DIR}/version.txt"
     rm -rf "$TMP_DIR"
     echo "ONNX Runtime installed to ${ORT_DIR}"
 else
-    echo "ONNX Runtime already installed"
+    echo "ONNX Runtime ${ORT_VERSION} already installed"
 fi
 
 # --- LiteRT runtime (libLiteRt) ---
