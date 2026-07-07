@@ -5,9 +5,13 @@
 
 # Keep all public SDK classes
 -keep class audio.soniqo.speech.SpeechPipeline { *; }
+-keep class audio.soniqo.speech.SpeechSynthesizer { *; }
+-keep class audio.soniqo.speech.SpeechSynthesizerConfig { *; }
+-keep class audio.soniqo.speech.SpeechSynthesisResult { *; }
 -keep class audio.soniqo.speech.SpeechConfig { *; }
 -keep class audio.soniqo.speech.SpeechEvent { *; }
 -keep class audio.soniqo.speech.SpeechEvent$* { *; }
 -keep class audio.soniqo.speech.ModelManager { *; }
 -keep class audio.soniqo.speech.ModelPrecision { *; }
 -keep class audio.soniqo.speech.PipelineState { *; }
+-keep class audio.soniqo.speech.service.SpeechTextToSpeechService { *; }

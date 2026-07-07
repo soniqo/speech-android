@@ -147,8 +147,9 @@ class ModelDownloadWorker(
          *
          *     pct = ((completed + bytesDownloaded / fileTotalBytes) / totalFiles) * 100
          *
-         * This keeps the progress bar moving through the dominant ~840 MB
-         * encoder (issue #30: "stuck at 0/16, 0%"). When [fileTotalBytes] is
+         * This keeps the progress bar moving through large model files
+         * instead of appearing stuck at the previous whole-file count. When
+         * [fileTotalBytes] is
          * unknown (0) it degrades to the previous whole-file behaviour for
          * that file only. Pure + side-effect free so it is unit-testable.
          */

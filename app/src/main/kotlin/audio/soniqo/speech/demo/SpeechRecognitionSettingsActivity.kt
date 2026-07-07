@@ -63,7 +63,7 @@ class SpeechRecognitionSettingsActivity : ComponentActivity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Recognition runs entirely on-device via Parakeet TDT v3 + Silero VAD. " +
+            text = "Recognition runs entirely on-device via Parakeet-EOU 120M + Silero VAD. " +
                 "No audio leaves the device."
             textSize = 13f
             setTextColor(Color.parseColor("#AAAAAA"))

@@ -4,7 +4,7 @@
 
 Локальный речевой SDK для Android, основанный на [ONNX Runtime](https://onnxruntime.ai) и [speech-core](https://github.com/soniqo/speech-core).
 
-Распознавание речи (114 языков), синтез речи (8 языков), определение голосовой активности и шумоподавление — всё работает локально. Никаких облачных API, никакие данные не покидают устройство.
+Потоковое распознавание речи с низким потреблением памяти (25 языков по умолчанию, TDT на 114 языков опционально), синтез речи, определение голосовой активности и шумоподавление — всё работает локально. Никаких облачных API, никакие данные не покидают устройство.
 
 **[Демо APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk)** · **[Модели](https://huggingface.co/collections/aufklarer/speech-android-models-69bb8a156cac0b96a2247f26)** · **[speech-swift](https://github.com/soniqo/speech-swift)** (аналог для Apple) · **[speech-core](https://github.com/soniqo/speech-core)** (движок конвейера + сборка для Linux/встраиваемых систем)
 
@@ -14,21 +14,25 @@
 
 ## Модели
 
-| Модель | Задача | Размер INT8 | Языки |
-| --- | --- | --- | --- |
-| [Parakeet TDT v3](https://huggingface.co/soniqo/Parakeet-TDT-v3-ONNX) | Распознавание речи | 891 МБ | 114 |
-| [Kokoro 82M](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | Синтез речи | 330 МБ | 8 (en, fr, es, it, pt, hi, ja, zh) |
-| [Supertonic-3](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | Синтез речи (LiteRT, flow-matching, G2P-free, 44,1 кГц) | ~380 МБ | 31 |
-| [Silero VAD v5](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | Определение голосовой активности | 2 МБ | Любой |
-| [DeepFilterNet3](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | Шумоподавление | ~8 МБ | Любой |
+| Модель | Задача | Загрузка | Пиковая память | Языки |
+| --- | --- | --- | --- | --- |
+| [Parakeet-EOU 120M](https://huggingface.co/soniqo/Parakeet-EOU-120M-ONNX-INT8) | Потоковый STT + EOU (по умолчанию) | 153 МБ | 232 МБ | 25 |
+| [Parakeet TDT v3](https://huggingface.co/soniqo/Parakeet-TDT-v3-ONNX) | STT с широким покрытием (опционально) | 891 МБ | ~1,1-1,3 ГБ | 114 |
+| [Kokoro 82M](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | Синтез речи (по умолчанию) | 330 МБ | 640 МБ | 8 (en, fr, es, it, pt, hi, ja, zh) |
+| [Supertonic-3](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | Синтез речи (LiteRT, flow-matching, G2P-free, 44,1 кГц) | ~380 МБ | 832 МБ | 31 |
+| [Silero VAD v5](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | Определение голосовой активности | 2 МБ | <10 МБ | Любой |
+| [DeepFilterNet3](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | Шумоподавление | ~8 МБ | по умолчанию не загружается | Любой |
+| [FunctionGemma 270M](https://huggingface.co/soniqo/FunctionGemma-270M-LiteRT-LM) | Локальная LLM — структурированные вызовы функций / инструментов | 283 МБ | зависит от runtime приложения | EN-tuned |
 
 Модели загружаются автоматически при первом запуске через `ModelManager.ensureModels()`.
+
+`SpeechConfig()` по умолчанию использует `SttModel.PARAKEET_EOU` и `TtsModel.KOKORO`, чтобы демо и системный распознаватель работали по низкопамятному Android-пути. Используйте `SpeechConfig(sttModel = SttModel.PARAKEET)` только если нужна более крупная TDT-модель на 114 языков.
 
 **Supertonic-3** — это опциональный многоязычный TTS повышенного качества: выберите его через `SpeechConfig(ttsModel = TtsModel.SUPERTONIC)` (требуется бэкенд LiteRT). Хост выполняет его четыре неавторегрессионных flow-matching-графа на устройстве на частоте 44,1 кГц; фронтенд работает G2P-free (NFKD + индекс Unicode — без фонемизатора), поэтому все 31 язык проходят через один путь.
 
 ## Попробовать демо
 
-Скачайте [подписанный APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk) и установите на любое arm64-устройство Android (8+). Модели (~1,2 ГБ) загружаются автоматически при первом запуске.
+Скачайте [подписанный APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk) и установите на любое arm64-устройство Android (8+). Стандартный низкопамятный набор моделей (~500 МБ) загружается автоматически при первом запуске.
 
 ## Добавить зависимость
 
@@ -130,19 +134,48 @@ adb shell settings put secure voice_recognition_service \
 
 **4. Проверьте**, запустив экран *Recognizer test* в демо-приложении, который вызывает `SpeechRecognizer.createSpeechRecognizer(ctx)` (без компонента) и логирует каждый callback фреймворка — удобно для подтверждения binder round-trip без необходимости в logcat.
 
-Сервис реализует `onCheckRecognitionSupport` (API 33+), возвращающий 27 BCP-47 языков, поддерживаемых Parakeet TDT v3, помеченных как `installedOnDeviceLanguage` при наличии моделей (или `pendingOnDeviceLanguage` во время загрузки). Аудиофокус удерживается с `AUDIOFOCUS_GAIN_TRANSIENT` на время сессии.
+Сервис реализует `onCheckRecognitionSupport` (API 33+), возвращающий 25 BCP-47 языков, поддерживаемых Parakeet-EOU, помеченных как `installedOnDeviceLanguage` при наличии моделей (или `pendingOnDeviceLanguage` во время загрузки). Аудиофокус удерживается с `AUDIOFOCUS_GAIN_TRANSIENT` на время сессии.
 
 **Оговорка:** Gboard, Samsung Keyboard и Google Assistant поставляются с собственными распознавателями и обходят системное значение по умолчанию. Через ваш сервис проходят только те приложения, которые явно вызывают API `SpeechRecognizer` фреймворка (или строят на нём собственный UI).
+
+## Системный синтез речи (`TextToSpeechService`)
+
+Демо-приложение также публикует `audio.soniqo.speech.service.SpeechTextToSpeechService`, поэтому Android может выбрать приложение в Настройки → Система → Языки и ввод → Синтез речи. Этот путь использует `ModelManager.ensureTtsModels()` и отдельный кэш `models_tts/`, поэтому framework TTS загружает только ресурсы Kokoro, а не полный пакет VAD/STT/enhancer.
+
+Чтобы открыть движок из другого приложения, объявите сервис:
+
+```xml
+<service
+    android:name="audio.soniqo.speech.service.SpeechTextToSpeechService"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="android.intent.action.TTS_SERVICE" />
+    </intent-filter>
+    <meta-data
+        android:name="android.speech.tts"
+        android:resource="@xml/tts_engine" />
+</service>
+```
+
+Добавьте `app/src/main/res/xml/tts_engine.xml`:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<tts-engine xmlns:android="http://schemas.android.com/apk/res/android" />
+```
 
 ## Производительность
 
 Измерено на эмуляторе Android (arm64-v8a, без NNAPI). Реальное оборудование значительно быстрее.
 
-| Модель | Задача | Аудио | Инференс | RTF |
+Измерено на Galaxy S23 Android, CPU-only если не указано иначе. Чем ниже RTF, тем быстрее.
+
+| Модель | Задача | RTF | Задержка | Пиковая память |
 | --- | --- | --- | --- | --- |
-| Parakeet TDT v3 | STT | 1,5 с | 175 мс | 0,12 |
-| Kokoro 82M | TTS | 1,9 с вывод | 1075 мс | 0,58 |
-| Silero VAD v5 | VAD | блок 32 мс | <1 мс | <0,01 |
+| Parakeet-EOU 120M ONNX INT8 | Потоковый STT + EOU | 0,21 | потоковые partials | 232 МБ |
+| Kokoro 82M ONNX FP32 | TTS | 0,53 | по предложениям | 640 МБ |
+| Supertonic-3 LiteRT | TTS | 0,34 | ~1,1 с TTFA | 832 МБ |
+| Silero VAD v5 | VAD | <0,01 | <1 мс на блок 32 мс | <10 МБ |
 
 ## Конвейер
 

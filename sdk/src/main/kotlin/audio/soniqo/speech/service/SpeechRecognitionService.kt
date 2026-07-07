@@ -50,8 +50,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Settings → System → Languages & input → Voice input.
  *
  * The service reads the microphone itself via [AudioRecord] — callers do not
- * push audio. `EXTRA_LANGUAGE` is currently logged but not enforced; Parakeet
- * v3 auto-detects across 114 languages.
+ * push audio. `EXTRA_LANGUAGE` is currently logged but not enforced; the
+ * default Parakeet-EOU model covers the languages advertised below.
  *
  * Open for test subclassing: [createPipeline], [resolveModelDir], and
  * [newAudioRecord] are protected seams so JVM unit tests can run without
@@ -140,7 +140,6 @@ open class SpeechRecognitionService : RecognitionService() {
         pipeline.start()
         record.startRecording()
         requestAudioFocus()
-        listener.readyForSpeech(Bundle.EMPTY)
 
         val eventJob = scope.launch {
             pipeline.events.collect { ev -> handleEvent(ev, listener) }
@@ -161,6 +160,7 @@ open class SpeechRecognitionService : RecognitionService() {
         }
 
         session = Session(pipeline, record, micJob, eventJob)
+        listener.readyForSpeech(Bundle.EMPTY)
     }
 
     private fun handleEvent(event: SpeechEvent, listener: Callback) {
@@ -367,8 +367,7 @@ open class SpeechRecognitionService : RecognitionService() {
      * surface a "downloading" UX instead of falling back to an online
      * recognizer.
      *
-     * The list is a representative subset of Parakeet TDT v3's claimed
-     * 114-language support — extend [SUPPORTED_LANGUAGES] to advertise more.
+     * The list mirrors Parakeet-EOU-120M's published 25-language coverage.
      */
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     override fun onCheckRecognitionSupport(
@@ -388,16 +387,15 @@ open class SpeechRecognitionService : RecognitionService() {
         private const val TAG = "SoniqoRecognition"
 
         /**
-         * BCP-47 tags advertised via [onCheckRecognitionSupport]. Parakeet
-         * TDT v3 is multilingual; this is a curated subset of the most-
-         * requested languages — extend as needed.
+         * BCP-47 tags advertised via [onCheckRecognitionSupport]. Keep this
+         * in sync with the default STT model in [SpeechConfig].
          */
         @JvmField
         val SUPPORTED_LANGUAGES: List<String> = listOf(
-            "ar", "cs", "da", "de", "el", "en", "es", "fi",
-            "fr", "he", "hi", "hu", "id", "it", "ja", "ko",
-            "nb", "nl", "pl", "pt", "ru", "sv", "th", "tr",
-            "uk", "vi", "zh",
+            "bg", "cs", "da", "de", "el", "en", "es", "et",
+            "fi", "fr", "hr", "hu", "it", "lt", "lv", "mt",
+            "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv",
+            "uk",
         )
     }
 }

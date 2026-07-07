@@ -4,6 +4,7 @@
 #include <speech_core/models/deepfilter.h>
 #include <speech_core/models/kokoro_tts.h>
 #include <speech_core/models/onnx_engine.h>
+#include <speech_core/models/onnx_nemotron_streaming_stt.h>
 #include <speech_core/models/parakeet_stt.h>
 #include <speech_core/models/nemotron_multilingual_stt.h>
 #include <speech_core/models/silero_vad.h>
@@ -15,9 +16,14 @@
 #include <speech_core/pipeline/agent_config.h>
 #include <speech_core/pipeline/voice_pipeline.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <mutex>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 #define LOG_TAG "Speech"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -35,7 +41,7 @@
 
 struct PipelineHandle {
     std::unique_ptr<speech_core::SileroVad> vad;
-    std::unique_ptr<speech_core::STTInterface> stt;  // Parakeet or Nemotron (ONNX/LiteRT)
+    std::unique_ptr<speech_core::STTInterface> stt;  // Parakeet-EOU, Parakeet TDT, or Nemotron
     std::unique_ptr<speech_core::TTSInterface> tts;  // Kokoro (ONNX) or Supertonic (LiteRT)
     std::unique_ptr<speech_core::DeepFilterEnhancer> enhancer;
     std::unique_ptr<speech_core::VoicePipeline> pipeline;
@@ -44,6 +50,46 @@ struct PipelineHandle {
     jobject callback = nullptr;
     jmethodID on_event_mid = nullptr;
 };
+
+struct SynthesizerHandle {
+    std::unique_ptr<speech_core::TTSInterface> tts;
+    std::mutex mutex;
+};
+
+static constexpr int STT_PARAKEET = 0;
+static constexpr int STT_NEMOTRON_MULTILINGUAL = 1;
+static constexpr int STT_PARAKEET_EOU = 2;
+static constexpr int BACKEND_ONNX = 0;
+static constexpr int BACKEND_LITERT = 1;
+static constexpr int TTS_KOKORO = 0;
+static constexpr int TTS_SUPERTONIC = 1;
+
+static std::unique_ptr<speech_core::TTSInterface> create_tts(
+    const std::string& dir, bool nnapi, int ttsModel)
+{
+    if (ttsModel == TTS_SUPERTONIC) {
+#ifdef SPEECH_ANDROID_WITH_LITERT
+        // Assets from soniqo/Supertonic-3-LiteRT: the four graphs + the G2P-free tokenizer
+        // (unicode_indexer.json + tts.json in modelDir) + voice_styles/.
+        return std::make_unique<speech_core::LiteRTSupertonicTts>(
+            dir + "/duration_predictor.tflite",
+            dir + "/text_encoder.tflite",
+            dir + "/vector_estimator.tflite",
+            dir + "/vocoder.tflite",
+            dir,
+            dir + "/voice_styles",
+            nnapi);
+#else
+        throw std::runtime_error("Supertonic TTS requires the LiteRT backend (not built into this SDK)");
+#endif
+    }
+
+    return std::make_unique<speech_core::KokoroTts>(
+        dir + "/kokoro-e2e.onnx",
+        dir + "/voices",
+        dir,
+        nnapi);
+}
 
 // ---------------------------------------------------------------------------
 // JNI thread helper
@@ -151,8 +197,6 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
     bool nnapi = useNnapi;
     std::string suffix = useInt8 ? "-int8" : "";
     std::string lang = jstring_to_string(env, language);
-    enum { STT_PARAKEET = 0, STT_NEMOTRON_MULTILINGUAL = 1 };
-    enum { BACKEND_ONNX = 0, BACKEND_LITERT = 1 };
 
     auto h = std::make_unique<PipelineHandle>();
     env->GetJavaVM(&h->jvm);
@@ -167,8 +211,8 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
         // Load models
         h->vad = std::make_unique<speech_core::SileroVad>(
             dir + "/silero-vad.onnx", /*hw_accel=*/false);
-        // STT — Parakeet (auto-detect) or Nemotron-3.5 multilingual
-        // (prompt-conditioned) on the ONNX or LiteRT backend.
+        // STT — Parakeet-EOU low-memory streaming, Parakeet TDT v3, or
+        // Nemotron-3.5 multilingual (prompt-conditioned) on ONNX/LiteRT.
         if (sttModel == STT_NEMOTRON_MULTILINGUAL) {
             if (sttBackend == BACKEND_LITERT) {
 #ifdef SPEECH_ANDROID_WITH_LITERT
@@ -189,6 +233,13 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
                 if (lang != "auto" && !lang.empty()) m->set_language(lang);
                 h->stt = std::move(m);
             }
+        } else if (sttModel == STT_PARAKEET_EOU) {
+            h->stt = std::make_unique<speech_core::OnnxNemotronStreamingStt>(
+                dir + "/parakeet-eou-encoder.onnx",
+                dir + "/parakeet-eou-decoder.onnx",
+                dir + "/parakeet-eou-joint.onnx",
+                dir + "/vocab.json",
+                nnapi);
         } else {
             h->stt = std::make_unique<speech_core::ParakeetStt>(
                 dir + "/parakeet-encoder" + suffix + ".onnx",
@@ -197,29 +248,7 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
                 nnapi);
         }
         // TTS — Kokoro (ONNX, 24 kHz) or Supertonic-3 (LiteRT flow-matching, 44.1 kHz, G2P-free).
-        enum { TTS_KOKORO = 0, TTS_SUPERTONIC = 1 };
-        if (ttsModel == TTS_SUPERTONIC) {
-#ifdef SPEECH_ANDROID_WITH_LITERT
-            // Assets from soniqo/Supertonic-3-LiteRT: the four graphs + the G2P-free tokenizer
-            // (unicode_indexer.json + tts.json in modelDir) + voice_styles/.
-            h->tts = std::make_unique<speech_core::LiteRTSupertonicTts>(
-                dir + "/duration_predictor.tflite",
-                dir + "/text_encoder.tflite",
-                dir + "/vector_estimator.tflite",
-                dir + "/vocoder.tflite",
-                dir,
-                dir + "/voice_styles",
-                nnapi);
-#else
-            throw std::runtime_error("Supertonic TTS requires the LiteRT backend (not built into this SDK)");
-#endif
-        } else {
-            h->tts = std::make_unique<speech_core::KokoroTts>(
-                dir + "/kokoro-e2e.onnx",
-                dir + "/voices",
-                dir,
-                nnapi);
-        }
+        h->tts = create_tts(dir, nnapi, ttsModel);
 
         speech_core::AgentConfig cfg;
         cfg.vad.min_silence_duration = 0.5f;
@@ -328,6 +357,105 @@ Java_audio_soniqo_speech_NativeBridge_nativeGetState(
     auto* h = reinterpret_cast<PipelineHandle*>(handle);
     if (!h || !h->pipeline) return 0;
     return static_cast<jint>(h->pipeline->state());
+}
+
+JNIEXPORT jlong JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeCreateSynthesizer(
+    JNIEnv* env, jobject /*thiz*/,
+    jstring modelDir, jboolean useNnapi, jint ttsModel)
+{
+    auto dir = jstring_to_string(env, modelDir);
+    auto h = std::make_unique<SynthesizerHandle>();
+
+    try {
+        h->tts = create_tts(dir, useNnapi, ttsModel);
+        auto& engine = OnnxEngine::get();
+        if (engine.had_nnapi_fallback()) {
+            LOGI("Synthesizer created with NNAPI fallback to CPU: %s",
+                 engine.nnapi_fallback_reason().c_str());
+        } else {
+            LOGI("Synthesizer created (NNAPI=%d)", static_cast<int>(useNnapi));
+        }
+    } catch (const std::exception& e) {
+        LOGE("Synthesizer creation failed: %s", e.what());
+        jclass ex_cls = env->FindClass("java/lang/RuntimeException");
+        if (ex_cls) {
+            std::string msg = std::string("Native synthesizer failed: ") + e.what();
+            env->ThrowNew(ex_cls, msg.c_str());
+        }
+        return 0;
+    }
+
+    return reinterpret_cast<jlong>(h.release());
+}
+
+JNIEXPORT void JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeDestroySynthesizer(
+    JNIEnv* /*env*/, jobject /*thiz*/, jlong handle)
+{
+    auto* h = reinterpret_cast<SynthesizerHandle*>(handle);
+    delete h;
+}
+
+JNIEXPORT void JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeStopSynthesizer(
+    JNIEnv* /*env*/, jobject /*thiz*/, jlong handle)
+{
+    auto* h = reinterpret_cast<SynthesizerHandle*>(handle);
+    if (h && h->tts) h->tts->cancel();
+}
+
+JNIEXPORT jint JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeSynthesizerSampleRate(
+    JNIEnv* /*env*/, jobject /*thiz*/, jlong handle)
+{
+    auto* h = reinterpret_cast<SynthesizerHandle*>(handle);
+    if (!h || !h->tts) return 0;
+    return static_cast<jint>(h->tts->output_sample_rate());
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeSynthesize(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jstring text, jstring language)
+{
+    auto* h = reinterpret_cast<SynthesizerHandle*>(handle);
+    if (!h || !h->tts) {
+        jclass ex_cls = env->FindClass("java/lang/IllegalStateException");
+        if (ex_cls) env->ThrowNew(ex_cls, "Native synthesizer is closed");
+        return nullptr;
+    }
+
+    std::string input = jstring_to_string(env, text);
+    std::string lang = jstring_to_string(env, language);
+    std::vector<int16_t> pcm;
+
+    try {
+        std::lock_guard<std::mutex> lock(h->mutex);
+        h->tts->synthesize(input, lang, [&pcm](const float* samples, size_t length, bool /*is_final*/) {
+            pcm.reserve(pcm.size() + length);
+            for (size_t i = 0; i < length; ++i) {
+                const float clamped = std::max(-1.0f, std::min(1.0f, samples[i]));
+                pcm.push_back(static_cast<int16_t>(std::lrintf(clamped * 32767.0f)));
+            }
+        });
+    } catch (const std::exception& e) {
+        LOGE("Synthesis failed: %s", e.what());
+        jclass ex_cls = env->FindClass("java/lang/RuntimeException");
+        if (ex_cls) {
+            std::string msg = std::string("Native synthesis failed: ") + e.what();
+            env->ThrowNew(ex_cls, msg.c_str());
+        }
+        return nullptr;
+    }
+
+    const jsize byte_count = static_cast<jsize>(pcm.size() * sizeof(int16_t));
+    jbyteArray out = env->NewByteArray(byte_count);
+    if (byte_count > 0) {
+        env->SetByteArrayRegion(
+            out, 0, byte_count,
+            reinterpret_cast<const jbyte*>(pcm.data()));
+    }
+    return out;
 }
 
 } // extern "C"

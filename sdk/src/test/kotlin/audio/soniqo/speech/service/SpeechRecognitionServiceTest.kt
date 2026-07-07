@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -183,10 +184,10 @@ class SpeechRecognitionServiceTest {
             "pending should include 'en'",
             support.pendingOnDeviceLanguages.contains("en"),
         )
-        assertTrue(
+        assertEquals(
             "pending should match SUPPORTED_LANGUAGES",
-            support.pendingOnDeviceLanguages
-                .containsAll(SpeechRecognitionService.SUPPORTED_LANGUAGES),
+            SpeechRecognitionService.SUPPORTED_LANGUAGES,
+            support.pendingOnDeviceLanguages,
         )
     }
 

@@ -2,9 +2,10 @@ package audio.soniqo.speech
 
 enum class ModelPrecision { FP32, INT8 }
 
-/** On-device STT model. PARAKEET auto-detects language; NEMOTRON_MULTILINGUAL
- *  is prompt-conditioned and uses [SpeechConfig.language]. */
-enum class SttModel { PARAKEET, NEMOTRON_MULTILINGUAL }
+/** On-device STT model. PARAKEET_EOU is the low-memory streaming default.
+ *  PARAKEET is the larger TDT v3 model; NEMOTRON_MULTILINGUAL is
+ *  prompt-conditioned and uses [SpeechConfig.language]. */
+enum class SttModel { PARAKEET, NEMOTRON_MULTILINGUAL, PARAKEET_EOU }
 
 /** Native inference backend for the STT model. Only Nemotron multilingual
  *  ships both; Parakeet is ONNX-only. */
@@ -23,7 +24,7 @@ data class SpeechConfig(
     val useNnapi: Boolean = true,
 
     /** Which STT model to load. */
-    val sttModel: SttModel = SttModel.PARAKEET,
+    val sttModel: SttModel = SttModel.PARAKEET_EOU,
 
     /** STT inference backend (Nemotron multilingual supports both). */
     val sttBackend: SttBackend = SttBackend.ONNX,

@@ -4,7 +4,7 @@
 
 适用于 Android 的设备端语音 SDK,基于 [ONNX Runtime](https://onnxruntime.ai) 和 [speech-core](https://github.com/soniqo/speech-core) 构建。
 
-语音识别(114 种语言)、文本转语音(8 种语言)、语音活动检测和噪声消除——全部在本地运行。无需云端 API,数据不会离开设备。
+低内存流式语音识别(默认 25 种语言,可选 114 语言 TDT)、文本转语音、语音活动检测和噪声消除——全部在本地运行。无需云端 API,数据不会离开设备。
 
 **[演示 APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk)** · **[模型](https://huggingface.co/collections/aufklarer/speech-android-models-69bb8a156cac0b96a2247f26)** · **[speech-swift](https://github.com/soniqo/speech-swift)**(Apple 对应版本)· **[speech-core](https://github.com/soniqo/speech-core)**(管线引擎 + Linux/嵌入式构建)
 
@@ -14,21 +14,25 @@
 
 ## 模型
 
-| 模型 | 任务 | INT8 大小 | 语言 |
-| --- | --- | --- | --- |
-| [Parakeet TDT v3](https://huggingface.co/soniqo/Parakeet-TDT-v3-ONNX) | 语音识别 | 891 MB | 114 |
-| [Kokoro 82M](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | 文本转语音 | 330 MB | 8(en、fr、es、it、pt、hi、ja、zh) |
-| [Supertonic-3](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 文本转语音(LiteRT、流匹配、免 G2P、44.1 kHz) | ~380 MB | 31 |
-| [Silero VAD v5](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | 语音活动检测 | 2 MB | 任意 |
-| [DeepFilterNet3](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | 噪声消除 | ~8 MB | 任意 |
+| 模型 | 任务 | 下载大小 | 峰值内存 | 语言 |
+| --- | --- | --- | --- | --- |
+| [Parakeet-EOU 120M](https://huggingface.co/soniqo/Parakeet-EOU-120M-ONNX-INT8) | 流式 STT + 端点检测(默认) | 153 MB | 232 MB | 25 |
+| [Parakeet TDT v3](https://huggingface.co/soniqo/Parakeet-TDT-v3-ONNX) | 广覆盖 STT(可选) | 891 MB | ~1.1-1.3 GB | 114 |
+| [Kokoro 82M](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | 文本转语音(默认) | 330 MB | 640 MB | 8(en、fr、es、it、pt、hi、ja、zh) |
+| [Supertonic-3](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 文本转语音(LiteRT、流匹配、免 G2P、44.1 kHz) | ~380 MB | 832 MB | 31 |
+| [Silero VAD v5](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | 语音活动检测 | 2 MB | <10 MB | 任意 |
+| [DeepFilterNet3](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | 噪声消除 | ~8 MB | 默认不加载 | 任意 |
+| [FunctionGemma 270M](https://huggingface.co/soniqo/FunctionGemma-270M-LiteRT-LM) | 端侧 LLM — 结构化函数 / 工具调用 | 283 MB | 取决于应用运行时 | EN 调优 |
 
 模型在首次启动时通过 `ModelManager.ensureModels()` 自动下载。
+
+`SpeechConfig()` 默认使用 `SttModel.PARAKEET_EOU` 和 `TtsModel.KOKORO`,让演示应用和系统识别服务走低内存 Android 路径。只有在需要更大的 114 语言 TDT 模型时,才使用 `SpeechConfig(sttModel = SttModel.PARAKEET)`。
 
 **Supertonic-3** 是可选启用的更高质量多语言 TTS — 通过 `SpeechConfig(ttsModel = TtsModel.SUPERTONIC)` 选用(需要 LiteRT 后端)。宿主在设备端以 44.1 kHz 运行其四个非自回归流匹配图;前端免 G2P(NFKD + Unicode 索引 — 无音素转换器),因此全部 31 种语言走同一条路径。
 
 ## 试用演示
 
-下载[已签名的 APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk) 并安装到任何 arm64 Android 设备(8 及以上)。模型(~1.2 GB)在首次启动时自动下载。
+下载[已签名的 APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk) 并安装到任何 arm64 Android 设备(8 及以上)。默认低内存模型包(~500 MB)在首次启动时自动下载。
 
 ## 添加依赖
 
@@ -129,19 +133,48 @@ adb shell settings put secure voice_recognition_service \
 
 **4. 验证**:运行演示应用的*识别器测试*界面,它调用 `SpeechRecognizer.createSpeechRecognizer(ctx)`(不带组件)并记录每个框架回调 — 无需 logcat 即可确认 binder 往返。
 
-服务实现了 `onCheckRecognitionSupport`(API 33+),返回 Parakeet TDT v3 涵盖的 27 个 BCP-47 语言,在模型存在时标记为 `installedOnDeviceLanguage`(下载中时为 `pendingOnDeviceLanguage`)。会话期间使用 `AUDIOFOCUS_GAIN_TRANSIENT` 获取音频焦点。
+服务实现了 `onCheckRecognitionSupport`(API 33+),返回 Parakeet-EOU 涵盖的 25 个 BCP-47 语言,在模型存在时标记为 `installedOnDeviceLanguage`(下载中时为 `pendingOnDeviceLanguage`)。会话期间使用 `AUDIOFOCUS_GAIN_TRANSIENT` 获取音频焦点。
 
 **注意:** Gboard、三星键盘和 Google Assistant 都自带识别器,会跳过系统默认。显式调用框架 `SpeechRecognizer` API(或在其上构建自己 UI)的应用才会经过你的服务。
+
+## 系统文字转语音(`TextToSpeechService`)
+
+演示应用还暴露 `audio.soniqo.speech.service.SpeechTextToSpeechService`, 因此 Android 可以在 设置 → 系统 → 语言和输入 → 文字转语音输出 中选择该应用。此路径使用 `ModelManager.ensureTtsModels()` 和单独的 `models_tts/` 缓存, 所以框架 TTS 只下载 Kokoro 资源, 而不会拉取完整的 VAD/STT/enhancer 管线包。
+
+要在其他应用中暴露该引擎, 请声明服务:
+
+```xml
+<service
+    android:name="audio.soniqo.speech.service.SpeechTextToSpeechService"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="android.intent.action.TTS_SERVICE" />
+    </intent-filter>
+    <meta-data
+        android:name="android.speech.tts"
+        android:resource="@xml/tts_engine" />
+</service>
+```
+
+添加 `app/src/main/res/xml/tts_engine.xml`:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<tts-engine xmlns:android="http://schemas.android.com/apk/res/android" />
+```
 
 ## 性能
 
 在 Android 模拟器(arm64-v8a,无 NNAPI)上测量。真实硬件速度显著更快。
 
-| 模型 | 任务 | 音频 | 推理 | RTF |
+在 Galaxy S23 Android 上测量,除非另有说明均为 CPU。RTF 越低越快。
+
+| 模型 | 任务 | RTF | 延迟 | 峰值内存 |
 | --- | --- | --- | --- | --- |
-| Parakeet TDT v3 | STT | 1.5 秒 | 175 毫秒 | 0.12 |
-| Kokoro 82M | TTS | 1.9 秒输出 | 1,075 毫秒 | 0.58 |
-| Silero VAD v5 | VAD | 32 毫秒块 | <1 毫秒 | <0.01 |
+| Parakeet-EOU 120M ONNX INT8 | 流式 STT + EOU | 0.21 | 流式 partials | 232 MB |
+| Kokoro 82M ONNX FP32 | TTS | 0.53 | 句级 | 640 MB |
+| Supertonic-3 LiteRT | TTS | 0.34 | ~1.1 秒 TTFA | 832 MB |
+| Silero VAD v5 | VAD | <0.01 | 每 32 毫秒块 <1 毫秒 | <10 MB |
 
 ## 管线
 

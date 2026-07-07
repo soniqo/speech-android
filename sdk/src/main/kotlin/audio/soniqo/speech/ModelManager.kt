@@ -22,14 +22,14 @@ object ModelManager {
     private const val BASE_URL = "https://huggingface.co/soniqo"
 
     // Bump when models on HuggingFace are updated to trigger cache invalidation.
-    // v5: Parakeet-TDT-v3-ONNX decoder-joint re-exported to INT32 inputs named
-    // `targets`/`target_length` (was INT64 `prednet_lengths_orig`) to match
-    // speech-core. Filenames are unchanged, so this bump evicts both the old
-    // INT64 v3 decoder and the interim English-only 0.6B set.
-    private const val MODEL_VERSION = 5
+    // v6: default STT switched to Parakeet-EOU-120M-ONNX-INT8, the low-memory
+    // streaming + end-of-utterance bundle. Evict the old default TDT v3 files
+    // so existing installs do not keep ~900 MB of unused ASR weights.
+    private const val MODEL_VERSION = 6
 
     private const val MAX_RETRIES = 5
     private const val RETRY_DELAY_MS = 2000L
+    private const val MODEL_SET_FILENAME = "model-set.txt"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -40,7 +40,7 @@ object ModelManager {
 
     private fun models(
         precision: ModelPrecision,
-        sttModel: SttModel = SttModel.PARAKEET,
+        sttModel: SttModel = SttModel.PARAKEET_EOU,
         sttBackend: SttBackend = SttBackend.ONNX,
         ttsModel: TtsModel = TtsModel.KOKORO,
     ): List<ModelFile> {
@@ -50,10 +50,23 @@ object ModelManager {
             ModelFile("Silero-VAD-v5-ONNX", "silero-vad.onnx"),
         )
 
-        // STT — Parakeet (auto-detect) or Nemotron-3.5 multilingual.
+        // STT — Parakeet-EOU low-memory streaming, Parakeet TDT v3, or
+        // Nemotron-3.5 multilingual.
         when (sttModel) {
-            // Parakeet-TDT-v3-ONNX is the multilingual export (8192-token vocab
-            // with Cyrillic/Greek/accented Latin) — required for non-English STT.
+            // Parakeet-EOU-120M is the Android default: cache-aware streaming
+            // RNN-T with inline <EOU>/<EOB> tokens, 25 European languages, and
+            // a much smaller runtime footprint than the 0.6B TDT path.
+            // Published as INT8-only (encoder INT8, decoder/joint FP32), so
+            // [precision] intentionally does not alter filenames here.
+            SttModel.PARAKEET_EOU -> files += listOf(
+                ModelFile("Parakeet-EOU-120M-ONNX-INT8", "parakeet-eou-encoder.onnx"),
+                ModelFile("Parakeet-EOU-120M-ONNX-INT8", "parakeet-eou-decoder.onnx"),
+                ModelFile("Parakeet-EOU-120M-ONNX-INT8", "parakeet-eou-joint.onnx"),
+                ModelFile("Parakeet-EOU-120M-ONNX-INT8", "vocab.json"),
+                ModelFile("Parakeet-EOU-120M-ONNX-INT8", "config.json"),
+            )
+            // Parakeet-TDT-v3-ONNX is the larger broad-coverage multilingual
+            // export (8192-token vocab with Cyrillic/Greek/accented Latin).
             // Its INT8 decoder-joint was re-exported so `targets`/`target_length`
             // are INT32 (was INT64) and the length input is named `target_length`
             // (was `prednet_lengths_orig`), matching speech-core's
@@ -91,38 +104,39 @@ object ModelManager {
             }
         }
 
-        // TTS — Kokoro (ONNX E2E, 24 kHz) or Supertonic-3 (LiteRT flow-matching, 44.1 kHz, G2P-free).
-        when (ttsModel) {
-            TtsModel.KOKORO -> files += listOf(
-                // E2E model — single file + external weights
-                ModelFile("Kokoro-82M-ONNX", "kokoro-e2e.onnx"),
-                ModelFile("Kokoro-82M-ONNX", "kokoro-e2e.onnx.data"),
-                ModelFile("Kokoro-82M-ONNX", "vocab_index.json"),
-                ModelFile("Kokoro-82M-ONNX", "us_gold.json"),
-                ModelFile("Kokoro-82M-ONNX", "us_silver.json"),
-                ModelFile("Kokoro-82M-ONNX", "dict_fr.json"),
-                ModelFile("Kokoro-82M-ONNX", "dict_es.json"),
-                ModelFile("Kokoro-82M-ONNX", "dict_it.json"),
-                ModelFile("Kokoro-82M-ONNX", "dict_pt.json"),
-                ModelFile("Kokoro-82M-ONNX", "dict_hi.json"),
-                ModelFile("Kokoro-82M-ONNX", "voices/af_heart.bin"),
-            )
-            // Four LiteRT graphs + the G2P-free tokenizer assets + the 10-voice catalog.
-            TtsModel.SUPERTONIC -> files += listOf(
-                "duration_predictor.tflite", "text_encoder.tflite",
-                "vector_estimator.tflite", "vocoder.tflite",
-                "tts.json", "unicode_indexer.json",
-                "voice_styles/F1.json", "voice_styles/F2.json", "voice_styles/F3.json",
-                "voice_styles/F4.json", "voice_styles/F5.json",
-                "voice_styles/M1.json", "voice_styles/M2.json", "voice_styles/M3.json",
-                "voice_styles/M4.json", "voice_styles/M5.json",
-            ).map { ModelFile("Supertonic-3-LiteRT", it) }
-        }
+        files += ttsModels(ttsModel)
 
         // Noise cancellation
         files += ModelFile("DeepFilterNet3-ONNX", "deepfilter-auxiliary.bin")
         return files
         // Note: FP32 Parakeet encoder also needs parakeet-encoder.onnx.data.
+    }
+
+    private fun ttsModels(ttsModel: TtsModel): List<ModelFile> = when (ttsModel) {
+        TtsModel.KOKORO -> listOf(
+            // E2E model — single file + external weights
+            ModelFile("Kokoro-82M-ONNX", "kokoro-e2e.onnx"),
+            ModelFile("Kokoro-82M-ONNX", "kokoro-e2e.onnx.data"),
+            ModelFile("Kokoro-82M-ONNX", "vocab_index.json"),
+            ModelFile("Kokoro-82M-ONNX", "us_gold.json"),
+            ModelFile("Kokoro-82M-ONNX", "us_silver.json"),
+            ModelFile("Kokoro-82M-ONNX", "dict_fr.json"),
+            ModelFile("Kokoro-82M-ONNX", "dict_es.json"),
+            ModelFile("Kokoro-82M-ONNX", "dict_it.json"),
+            ModelFile("Kokoro-82M-ONNX", "dict_pt.json"),
+            ModelFile("Kokoro-82M-ONNX", "dict_hi.json"),
+            ModelFile("Kokoro-82M-ONNX", "voices/af_heart.bin"),
+        )
+        // Four LiteRT graphs + the G2P-free tokenizer assets + the 10-voice catalog.
+        TtsModel.SUPERTONIC -> listOf(
+            "duration_predictor.tflite", "text_encoder.tflite",
+            "vector_estimator.tflite", "vocoder.tflite",
+            "tts.json", "unicode_indexer.json",
+            "voice_styles/F1.json", "voice_styles/F2.json", "voice_styles/F3.json",
+            "voice_styles/F4.json", "voice_styles/F5.json",
+            "voice_styles/M1.json", "voice_styles/M2.json", "voice_styles/M3.json",
+            "voice_styles/M4.json", "voice_styles/M5.json",
+        ).map { ModelFile("Supertonic-3-LiteRT", it) }
     }
 
     data class ModelFile(val repo: String, val filename: String)
@@ -137,8 +151,8 @@ object ModelManager {
     )
 
     // Report intra-file byte progress at most this often. Without throttling,
-    // downloadFile's 64 KB read loop fires the callback ~13k times for the
-    // ~840 MB encoder, flooding WorkManager's setProgress/setForeground.
+    // downloadFile's 64 KB read loop can fire thousands of callbacks for
+    // large model files, flooding WorkManager's setProgress/setForeground.
     private const val PROGRESS_REPORT_INTERVAL_BYTES = 1_000_000L
 
     /**
@@ -154,7 +168,7 @@ object ModelManager {
     fun areModelsReady(
         context: Context,
         precision: ModelPrecision = ModelPrecision.INT8,
-        sttModel: SttModel = SttModel.PARAKEET,
+        sttModel: SttModel = SttModel.PARAKEET_EOU,
         sttBackend: SttBackend = SttBackend.ONNX,
         ttsModel: TtsModel = TtsModel.KOKORO,
     ): Boolean {
@@ -164,6 +178,7 @@ object ModelManager {
         val versionFile = File(dir, "version.txt")
         val cached = versionFile.takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0
         if (cached < MODEL_VERSION) return false
+        if (cachedModelSet(dir) != modelSetKey(precision, sttModel, sttBackend, ttsModel)) return false
 
         val fileList = models(precision, sttModel, sttBackend, ttsModel)
         val allFiles = if (precision == ModelPrecision.FP32 && sttModel == SttModel.PARAKEET) {
@@ -177,15 +192,42 @@ object ModelManager {
         }
     }
 
+    /**
+     * True iff the TTS-only cache contains every file needed for [ttsModel].
+     * This is used by the Android framework TextToSpeechService path, where
+     * downloading VAD/STT/enhancer assets would be unnecessary overhead.
+     */
+    fun areTtsModelsReady(
+        context: Context,
+        ttsModel: TtsModel = TtsModel.KOKORO,
+    ): Boolean {
+        val dir = File(context.filesDir, "models_tts")
+        if (!dir.exists()) return false
+
+        val versionFile = File(dir, "version.txt")
+        val cached = versionFile.takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0
+        if (cached < MODEL_VERSION) return false
+        if (cachedModelSet(dir) != ttsModelSetKey(ttsModel)) return false
+
+        return ttsModels(ttsModel).all { model ->
+            val dest = File(dir, model.filename)
+            dest.exists() && isValidModel(dest, model.filename)
+        }
+    }
+
     /** Path to the model directory for [precision], without downloading. */
     fun modelDir(context: Context): String =
         File(context.filesDir, "models").absolutePath
+
+    /** Path to the TTS-only model directory, without downloading. */
+    fun ttsModelDir(context: Context): String =
+        File(context.filesDir, "models_tts").absolutePath
 
     /** Returns the model directory path, downloading models if needed. */
     suspend fun ensureModels(
         context: Context,
         precision: ModelPrecision = ModelPrecision.INT8,
-        sttModel: SttModel = SttModel.PARAKEET,
+        sttModel: SttModel = SttModel.PARAKEET_EOU,
         sttBackend: SttBackend = SttBackend.ONNX,
         ttsModel: TtsModel = TtsModel.KOKORO,
         onProgress: ((Progress) -> Unit)? = null,
@@ -194,18 +236,18 @@ object ModelManager {
         dir.mkdirs()
         File(dir, "voices").mkdirs()
 
-        // Invalidate cache if model version changed
+        // Invalidate cache if model version or requested model set changed.
         val versionFile = File(dir, "version.txt")
         val cached = versionFile.takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0
-        if (cached < MODEL_VERSION) {
-            dir.listFiles()?.filter { it.name != "voices" }?.forEach { it.delete() }
-            dir.resolve("voices").listFiles()?.forEach { it.delete() }
+        val requestedModelSet = modelSetKey(precision, sttModel, sttBackend, ttsModel)
+        if (cached < MODEL_VERSION || cachedModelSet(dir) != requestedModelSet) {
+            clearModelCache(dir)
         }
 
         // Note: leftover .tmp files are intentionally preserved here. If a
         // previous run was interrupted, downloadFile resumes via Range:
         // bytes=N- on the next attempt. Stale .tmp from an old MODEL_VERSION
-        // is already wiped above.
+        // or from a different model set are already wiped above.
 
         val fileList = models(precision, sttModel, sttBackend, ttsModel)
         // FP32 Parakeet encoder needs the external data file.
@@ -215,6 +257,50 @@ object ModelManager {
             fileList
         }
 
+        downloadMissingModels(dir, allFiles, onProgress)
+
+        // Write manifest
+        File(dir, "precision.txt").writeText(precision.name)
+        versionFile.writeText(MODEL_VERSION.toString())
+        File(dir, MODEL_SET_FILENAME).writeText(requestedModelSet)
+
+        dir.absolutePath
+    }
+
+    /** Returns the TTS-only model directory path, downloading models if needed. */
+    suspend fun ensureTtsModels(
+        context: Context,
+        ttsModel: TtsModel = TtsModel.KOKORO,
+        onProgress: ((Progress) -> Unit)? = null,
+    ): String = withContext(Dispatchers.IO) {
+        val dir = File(context.filesDir, "models_tts")
+        dir.mkdirs()
+        File(dir, "voices").mkdirs()
+        File(dir, "voice_styles").mkdirs()
+
+        val versionFile = File(dir, "version.txt")
+        val cached = versionFile.takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0
+        val requestedModelSet = ttsModelSetKey(ttsModel)
+        if (cached < MODEL_VERSION || cachedModelSet(dir) != requestedModelSet) {
+            clearModelCache(dir)
+            File(dir, "voices").mkdirs()
+            File(dir, "voice_styles").mkdirs()
+        }
+
+        downloadMissingModels(dir, ttsModels(ttsModel), onProgress)
+
+        File(dir, "precision.txt").writeText("TTS")
+        versionFile.writeText(MODEL_VERSION.toString())
+        File(dir, MODEL_SET_FILENAME).writeText(requestedModelSet)
+
+        dir.absolutePath
+    }
+
+    private fun downloadMissingModels(
+        dir: File,
+        allFiles: List<ModelFile>,
+        onProgress: ((Progress) -> Unit)?,
+    ) {
         var completed = 0
         for (model in allFiles) {
             val dest = File(dir, model.filename)
@@ -235,12 +321,38 @@ object ModelManager {
             }
             completed++
         }
+    }
 
-        // Write manifest
-        File(dir, "precision.txt").writeText(precision.name)
-        versionFile.writeText(MODEL_VERSION.toString())
+    private fun modelSetKey(
+        precision: ModelPrecision,
+        sttModel: SttModel,
+        sttBackend: SttBackend,
+        ttsModel: TtsModel,
+    ): String = listOf(
+        "v$MODEL_VERSION",
+        "precision=${precision.name}",
+        "stt=${sttModel.name}",
+        "backend=${sttBackend.name}",
+        "tts=${ttsModel.name}",
+    ).joinToString("|")
 
-        dir.absolutePath
+    private fun ttsModelSetKey(ttsModel: TtsModel): String = listOf(
+        "v$MODEL_VERSION",
+        "profile=TTS",
+        "tts=${ttsModel.name}",
+    ).joinToString("|")
+
+    private fun cachedModelSet(dir: File): String? =
+        File(dir, MODEL_SET_FILENAME).takeIf { it.exists() }?.readText()?.trim()
+
+    private fun clearModelCache(dir: File) {
+        dir.listFiles()?.forEach { entry ->
+            if (entry.name == "voices") {
+                entry.listFiles()?.forEach { it.deleteRecursively() }
+            } else {
+                entry.deleteRecursively()
+            }
+        }
     }
 
     private fun downloadFile(url: String, dest: File, onBytes: (downloaded: Long, fileTotal: Long) -> Unit) {
@@ -351,8 +463,11 @@ object ModelManager {
     private val MIN_SIZES = mapOf(
         "parakeet-encoder-int8.onnx" to 100_000_000L,   // ~840 MB
         "parakeet-decoder-joint-int8.onnx" to 10_000_000L, // ~51 MB
+        "parakeet-eou-encoder.onnx" to 100_000_000L,    // ~132 MB
+        "parakeet-eou-decoder.onnx" to 10_000_000L,     // ~16 MB
+        "parakeet-eou-joint.onnx" to 1_000_000L,        // ~6 MB
         "kokoro-e2e.onnx" to 1_000L,                     // Small (weights in .data file)
-        "kokoro-e2e.onnx.data" to 50_000_000L,           // ~89 MB
+        "kokoro-e2e.onnx.data" to 50_000_000L,           // ~310 MB
         "silero-vad.onnx" to 500_000L,                   // ~2 MB
     )
 
