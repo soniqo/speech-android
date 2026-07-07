@@ -1,12 +1,11 @@
 package audio.soniqo.speech.service
 
 import android.Manifest
+import android.content.Context
+import android.content.ContextParams
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Build
@@ -37,6 +36,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.IOException
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -69,9 +69,6 @@ open class SpeechRecognitionService : RecognitionService() {
     // create a parallel session that leaks AudioRecord and the pipeline.
     private val starting = AtomicBoolean(false)
 
-    @Volatile
-    private var audioFocusRequest: AudioFocusRequest? = null
-
     private class Session(
         val pipeline: SpeechPipeline,
         val audioRecord: AudioRecord,
@@ -92,21 +89,39 @@ open class SpeechRecognitionService : RecognitionService() {
 
         val wantPartial = recognizerIntent
             ?.getBooleanExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false) ?: false
-        val requestedLang = recognizerIntent?.getStringExtra(RecognizerIntent.EXTRA_LANGUAGE)
+        val requestedLang = recognizerIntent?.let(::requestedLanguageTag)
         if (requestedLang != null) {
-            Log.i(TAG, "EXTRA_LANGUAGE=$requestedLang (auto-detected by STT, hint not enforced)")
+            Log.i(TAG, "EXTRA_LANGUAGE=$requestedLang")
+        }
+        if (requestedLang != null && !isSupportedLanguageTag(requestedLang)) {
+            Log.i(TAG, "unsupported requested language: $requestedLang")
+            starting.set(false)
+            listener.error(SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED)
+            return
+        }
+        if (!areRecognitionModelsReady()) {
+            Log.i(TAG, "models not ready for startListening; scheduling download")
+            runCatching { enqueueRecognitionModelDownload(recognizerIntent) }
+                .onFailure { Log.w(TAG, "failed to enqueue model download: ${it.message}") }
+            starting.set(false)
+            listener.error(SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE)
+            return
         }
 
         scope.launch {
             try {
-                startSession(listener, wantPartial)
+                startSession(listener, wantPartial, requestedLang)
             } finally {
                 starting.set(false)
             }
         }
     }
 
-    private suspend fun startSession(listener: Callback, wantPartial: Boolean) {
+    private suspend fun startSession(
+        listener: Callback,
+        wantPartial: Boolean,
+        requestedLang: String?,
+    ) {
         val pipeline: SpeechPipeline
         val record: AudioRecord
         try {
@@ -114,11 +129,12 @@ open class SpeechRecognitionService : RecognitionService() {
             pipeline = createPipeline(
                 SpeechConfig(
                     modelDir = modelDir,
+                    language = requestedLang?.let(::languageBaseTag) ?: "auto",
                     emitPartialTranscriptions = wantPartial,
                 )
             )
 
-            val newRecord = newAudioRecord()
+            val newRecord = newAudioRecord(newAudioRecordContext(listener))
             if (newRecord == null) {
                 listener.error(SpeechRecognizer.ERROR_AUDIO)
                 pipeline.close()
@@ -139,7 +155,6 @@ open class SpeechRecognitionService : RecognitionService() {
 
         pipeline.start()
         record.startRecording()
-        requestAudioFocus()
 
         val eventJob = scope.launch {
             pipeline.events.collect { ev -> handleEvent(ev, listener) }
@@ -235,7 +250,6 @@ open class SpeechRecognitionService : RecognitionService() {
         runCatching { s.audioRecord.release() }
         runCatching { s.pipeline.stop() }
         runCatching { s.pipeline.close() }
-        abandonAudioFocus()
     }
 
     override fun onDestroy() {
@@ -262,6 +276,14 @@ open class SpeechRecognitionService : RecognitionService() {
     protected open fun createPipeline(config: SpeechConfig): SpeechPipeline =
         SpeechPipeline(config)
 
+    /** Cheap readiness check used before binding a third-party recognition request. */
+    protected open fun areRecognitionModelsReady(): Boolean =
+        ModelManager.areModelsReady(applicationContext, ModelPrecision.INT8)
+
+    /** Schedule model download without blocking the current framework request. */
+    protected open fun enqueueRecognitionModelDownload(recognizerIntent: Intent?): java.util.UUID =
+        ModelDownloadWorker.enqueue(applicationContext, ModelPrecision.INT8)
+
     /**
      * Resolve the model directory. If models aren't on disk yet we delegate
      * to [ModelDownloadWorker] (which runs as a foreground service so the
@@ -274,11 +296,11 @@ open class SpeechRecognitionService : RecognitionService() {
      */
     protected open suspend fun resolveModelDir(): String {
         val ctx = applicationContext
-        if (ModelManager.areModelsReady(ctx, ModelPrecision.INT8)) {
+        if (areRecognitionModelsReady()) {
             return ModelManager.modelDir(ctx)
         }
         Log.i(TAG, "models not ready — delegating to ModelDownloadWorker")
-        val workId = ModelDownloadWorker.enqueue(ctx, ModelPrecision.INT8)
+        val workId = enqueueRecognitionModelDownload(null)
         val info = WorkManager.getInstance(ctx)
             .getWorkInfoByIdFlow(workId)
             .filterNotNull()
@@ -301,12 +323,25 @@ open class SpeechRecognitionService : RecognitionService() {
      * device (negative [AudioRecord.getMinBufferSize]). Overridden in tests so
      * Robolectric doesn't have to stand up a real recorder.
      */
-    protected open fun newAudioRecord(): AudioRecord? {
+    protected open fun newAudioRecord(context: Context): AudioRecord? {
         val sampleRate = 16_000
+        val format = AudioFormat.Builder()
+            .setSampleRate(sampleRate)
+            .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+            .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+            .build()
         val minBuf = AudioRecord.getMinBufferSize(
             sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_FLOAT
         )
         if (minBuf <= 0) return null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return AudioRecord.Builder()
+                .setContext(context)
+                .setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
+                .setAudioFormat(format)
+                .setBufferSizeInBytes(minBuf * 4)
+                .build()
+        }
         return AudioRecord(
             MediaRecorder.AudioSource.VOICE_RECOGNITION,
             sampleRate,
@@ -316,56 +351,27 @@ open class SpeechRecognitionService : RecognitionService() {
         )
     }
 
-    // -- audio focus ---------------------------------------------------------
-
     /**
-     * Acquire transient audio focus while we're listening so music ducks /
-     * pauses, and we get notified when something more important needs the
-     * mic (incoming call, navigation prompt). Best-effort; logs and proceeds
-     * if the system denies the request.
+     * Attribute microphone access to the app that requested recognition. This
+     * matches the RecognitionService contract on Android 12+ and avoids
+     * stricter clients treating the recognizer as an unrelated mic user.
      */
-    private fun requestAudioFocus() {
-        val am = getSystemService(AudioManager::class.java) ?: return
-        val attrs = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build()
-        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            .setAudioAttributes(attrs)
-            .setOnAudioFocusChangeListener { change ->
-                when (change) {
-                    AudioManager.AUDIOFOCUS_LOSS,
-                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                        Log.i(TAG, "audio focus lost ($change), tearing down session")
-                        tearDownSession()
-                    }
-                    else -> Unit
-                }
-            }
-            .build()
-        audioFocusRequest = request
-        val result = am.requestAudioFocus(request)
-        if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            Log.w(TAG, "audio focus request denied (result=$result) — proceeding anyway")
-        }
-    }
-
-    private fun abandonAudioFocus() {
-        val am = getSystemService(AudioManager::class.java) ?: return
-        val req = audioFocusRequest ?: return
-        audioFocusRequest = null
-        runCatching { am.abandonAudioFocusRequest(req) }
+    protected open fun newAudioRecordContext(listener: Callback): Context {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return this
+        return createContext(
+            ContextParams.Builder()
+                .setNextAttributionSource(listener.callingAttributionSource)
+                .build()
+        )
     }
 
     // -- onCheckRecognitionSupport (API 33+) --------------------------------
 
     /**
      * Tell the framework which BCP-47 languages we can recognize on-device.
-     * If the models are already present we report them as installed; if
-     * they're still pending download we mark them pending so the caller can
-     * surface a "downloading" UX instead of falling back to an online
-     * recognizer.
+     * If the models are already present we report them as installed; otherwise
+     * we report them as supported so the caller can trigger model download
+     * instead of falling back to an online recognizer.
      *
      * The list mirrors Parakeet-EOU-120M's published 25-language coverage.
      */
@@ -374,13 +380,25 @@ open class SpeechRecognitionService : RecognitionService() {
         recognizerIntent: Intent,
         listener: SupportCallback,
     ) {
+        val languages = supportLanguagesFor(recognizerIntent)
+        if (languages.isEmpty()) {
+            listener.onError(SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED)
+            return
+        }
         val builder = RecognitionSupport.Builder()
-        val ready = ModelManager.areModelsReady(this, ModelPrecision.INT8)
-        SUPPORTED_LANGUAGES.forEach { tag ->
+        val ready = areRecognitionModelsReady()
+        languages.forEach { tag ->
             if (ready) builder.addInstalledOnDeviceLanguage(tag)
-            else builder.addPendingOnDeviceLanguage(tag)
+            else builder.addSupportedOnDeviceLanguage(tag)
         }
         listener.onSupportResult(builder.build())
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    override fun onTriggerModelDownload(recognizerIntent: Intent) {
+        if (supportLanguagesFor(recognizerIntent).isNotEmpty()) {
+            enqueueRecognitionModelDownload(recognizerIntent)
+        }
     }
 
     companion object {
@@ -397,5 +415,39 @@ open class SpeechRecognitionService : RecognitionService() {
             "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv",
             "uk",
         )
+
+        private val SUPPORTED_LANGUAGE_BASES: Set<String> =
+            SUPPORTED_LANGUAGES.mapTo(linkedSetOf()) { it.lowercase(Locale.US) }
+
+        internal fun isSupportedLanguageTag(tag: String): Boolean =
+            languageBaseTag(tag) in SUPPORTED_LANGUAGE_BASES
+
+        internal fun supportLanguagesFor(intent: Intent): List<String> {
+            val requested = requestedLanguageTag(intent) ?: return SUPPORTED_LANGUAGES
+            if (!isSupportedLanguageTag(requested)) return emptyList()
+            val canonical = canonicalLanguageTag(requested)
+            val base = languageBaseTag(requested)
+            return listOf(canonical, base).distinct()
+        }
+
+        private fun requestedLanguageTag(intent: Intent): String? =
+            listOf(
+                intent.getStringExtra(RecognizerIntent.EXTRA_LANGUAGE),
+                intent.getStringExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE),
+            ).firstNotNullOfOrNull { tag -> tag?.trim()?.takeIf { it.isNotEmpty() } }
+
+        internal fun canonicalLanguageTag(tag: String): String {
+            val normalized = tag.trim().replace('_', '-')
+            val locale = Locale.forLanguageTag(normalized)
+            return locale.takeIf { it.language.isNotBlank() }?.toLanguageTag() ?: normalized
+        }
+
+        internal fun languageBaseTag(tag: String): String {
+            val canonical = canonicalLanguageTag(tag)
+            val locale = Locale.forLanguageTag(canonical)
+            return locale.language.takeIf { it.isNotBlank() }
+                ?.lowercase(Locale.US)
+                ?: canonical.substringBefore('-').lowercase(Locale.US)
+        }
     }
 }

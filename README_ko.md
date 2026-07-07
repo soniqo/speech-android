@@ -134,7 +134,7 @@ adb shell settings put secure voice_recognition_service \
 
 **4. 검증**: 데모 앱의 *Recognizer test* 화면을 실행하면 `SpeechRecognizer.createSpeechRecognizer(ctx)`(컴포넌트 없이)를 호출하고 모든 프레임워크 콜백을 기록합니다 — logcat 없이 binder 왕복을 확인하는 데 유용합니다.
 
-서비스는 `onCheckRecognitionSupport`(API 33+)를 구현하여 Parakeet-EOU가 지원하는 25개 BCP-47 언어를 반환합니다. 모델이 존재하면 `installedOnDeviceLanguage`, 다운로드 중이면 `pendingOnDeviceLanguage`로 표시됩니다. 세션 동안 `AUDIOFOCUS_GAIN_TRANSIENT`로 오디오 포커스를 획득합니다.
+서비스는 `onCheckRecognitionSupport`(API 33+)를 구현하여 Parakeet-EOU가 지원하는 25개 BCP-47 기본 언어와, 지원되는 기본 언어에 매핑되는 경우 요청된 정확한 지역 태그를 반환합니다. 모델이 존재하면 `installedOnDeviceLanguage`, 다운로드 전에는 `supportedOnDeviceLanguage`로 표시됩니다. 서비스는 호출 앱의 오디오 포커스를 가져가지 않습니다.
 
 **주의:** Gboard, 삼성 키보드, Google Assistant는 자체 인식 엔진을 번들로 제공하며 시스템 기본값을 건너뜁니다. 프레임워크 `SpeechRecognizer` API를 명시적으로 호출하거나 그 위에 자체 UI를 구축하는 앱만이 서비스를 통과합니다.
 

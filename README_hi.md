@@ -134,7 +134,7 @@ adb shell settings put secure voice_recognition_service \
 
 **4. सत्यापित करें** डेमो ऐप का *Recognizer test* स्क्रीन चलाकर, जो `SpeechRecognizer.createSpeechRecognizer(ctx)` (बिना कंपोनेंट के) कॉल करता है और हर फ्रेमवर्क कॉलबैक को लॉग करता है — logcat के बिना binder राउंड-ट्रिप की पुष्टि के लिए उपयोगी।
 
-सेवा `onCheckRecognitionSupport` (API 33+) को लागू करती है जो Parakeet-EOU द्वारा कवर की गई 25 BCP-47 भाषाओं को लौटाती है, मॉडल मौजूद होने पर `installedOnDeviceLanguage` के रूप में चिह्नित (या डाउनलोड के दौरान `pendingOnDeviceLanguage`)। सत्र की अवधि के लिए `AUDIOFOCUS_GAIN_TRANSIENT` के साथ ऑडियो फोकस प्राप्त किया जाता है।
+सेवा `onCheckRecognitionSupport` (API 33+) को लागू करती है जो Parakeet-EOU द्वारा कवर की गई 25 BCP-47 आधार भाषाएँ लौटाती है, और समर्थित आधार भाषा से मेल खाने पर अनुरोधित सटीक क्षेत्रीय टैग भी लौटाती है। मॉडल मौजूद होने पर भाषाएँ `installedOnDeviceLanguage` के रूप में, और डाउनलोड से पहले `supportedOnDeviceLanguage` के रूप में चिह्नित होती हैं। सेवा कॉल करने वाले ऐप से ऑडियो फोकस नहीं लेती।
 
 **सीमा:** Gboard, Samsung Keyboard और Google Assistant अपने स्वयं के पहचानकर्ता बंडल करते हैं और सिस्टम डिफ़ॉल्ट को छोड़ देते हैं। फ्रेमवर्क `SpeechRecognizer` API को स्पष्ट रूप से कॉल करने वाले ऐप (या उसके ऊपर अपना UI बनाने वाले) ही आपकी सेवा से होकर गुजरते हैं।
 

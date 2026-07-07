@@ -134,7 +134,7 @@ adb shell settings put secure voice_recognition_service \
 
 **4. Проверьте**, запустив экран *Recognizer test* в демо-приложении, который вызывает `SpeechRecognizer.createSpeechRecognizer(ctx)` (без компонента) и логирует каждый callback фреймворка — удобно для подтверждения binder round-trip без необходимости в logcat.
 
-Сервис реализует `onCheckRecognitionSupport` (API 33+), возвращающий 25 BCP-47 языков, поддерживаемых Parakeet-EOU, помеченных как `installedOnDeviceLanguage` при наличии моделей (или `pendingOnDeviceLanguage` во время загрузки). Аудиофокус удерживается с `AUDIOFOCUS_GAIN_TRANSIENT` на время сессии.
+Сервис реализует `onCheckRecognitionSupport` (API 33+), возвращающий 25 базовых BCP-47 языков, поддерживаемых Parakeet-EOU, а также точный запрошенный региональный тег, если он соответствует поддерживаемому базовому языку. Языки помечаются как `installedOnDeviceLanguage`, когда модели уже есть на устройстве, или как `supportedOnDeviceLanguage` до загрузки. Сервис не забирает аудиофокус у вызывающего приложения.
 
 **Оговорка:** Gboard, Samsung Keyboard и Google Assistant поставляются с собственными распознавателями и обходят системное значение по умолчанию. Через ваш сервис проходят только те приложения, которые явно вызывают API `SpeechRecognizer` фреймворка (или строят на нём собственный UI).
 

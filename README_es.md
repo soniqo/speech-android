@@ -146,10 +146,11 @@ registra cada callback del framework — útil para confirmar el round-trip del
 binder sin necesitar logcat.
 
 El servicio implementa `onCheckRecognitionSupport` (API 33+) devolviendo los
-25 idiomas BCP-47 que cubre Parakeet-EOU, marcados como
-`installedOnDeviceLanguage` cuando los modelos están presentes (o
-`pendingOnDeviceLanguage` mientras se descargan). Se adquiere foco de audio
-con `AUDIOFOCUS_GAIN_TRANSIENT` durante la sesión.
+25 idiomas base BCP-47 que cubre Parakeet-EOU, además de la etiqueta regional
+exacta solicitada cuando corresponde a un idioma base soportado. Los idiomas
+se marcan como `installedOnDeviceLanguage` cuando los modelos están presentes,
+o como `supportedOnDeviceLanguage` antes de descargarlos. El servicio no toma
+el foco de audio de la app que lo invoca.
 
 **Limitación:** Gboard, Samsung Keyboard y Google Assistant incluyen sus
 propios reconocedores y se saltan el predeterminado del sistema. Las apps

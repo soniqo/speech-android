@@ -2,12 +2,13 @@ package audio.soniqo.speech.service
 
 import android.Manifest
 import android.app.Application
+import android.content.Context
 import android.content.Intent
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.speech.RecognitionService
 import android.speech.RecognitionSupport
+import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.test.core.app.ApplicationProvider
 import audio.soniqo.speech.PipelineState
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -99,6 +101,47 @@ class SpeechRecognitionServiceTest {
     }
 
     @Test
+    fun startListening_requestedRegionalLanguageIsAccepted() {
+        val intent = Intent().putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fr-FR")
+
+        service.startListening(intent, listener)
+
+        verify(timeout = 1500) { listener.readyForSpeech(any()) }
+        assertEquals("fr", service.lastConfig?.language)
+    }
+
+    @Test
+    fun startListening_requestedLanguagePreferenceIsAccepted() {
+        val intent = Intent().putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-US")
+
+        service.startListening(intent, listener)
+
+        verify(timeout = 1500) { listener.readyForSpeech(any()) }
+        assertEquals("en", service.lastConfig?.language)
+    }
+
+    @Test
+    fun startListening_unsupportedLanguageReportsLanguageNotSupported() {
+        val intent = Intent().putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ja-JP")
+
+        service.startListening(intent, listener)
+
+        verify { listener.error(SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED) }
+        assertEquals(0, fakePipeline.startCalls)
+    }
+
+    @Test
+    fun startListening_modelsNotReadyReportsLanguageUnavailableAndSchedulesDownload() {
+        service.modelsReady = false
+
+        service.startListening(Intent(), listener)
+
+        verify { listener.error(SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE) }
+        assertEquals(1, service.downloadRequests)
+        assertEquals(0, fakePipeline.startCalls)
+    }
+
+    @Test
     fun stopListening_flushesPipelineWithSilence() {
         // Regression test for the stop-hang fix: VAD detects end-of-utterance
         // from silence in the audio stream, and nativeStop does not flush. We
@@ -137,39 +180,18 @@ class SpeechRecognitionServiceTest {
     }
 
     @Test
-    fun startListening_requestsAudioFocus() {
+    fun startListening_doesNotRequestAudioFocusFromCallingApp() {
         service.startListening(Intent(), listener)
         verify(timeout = 1500) { listener.readyForSpeech(any()) }
 
         val app = ApplicationProvider.getApplicationContext<Application>()
         val am = app.getSystemService(AudioManager::class.java)
-        val granted = shadowOf(am).lastAudioFocusRequest
-        assertTrue(
-            "expected an AudioFocusRequest after startListening, got $granted",
-            granted != null,
-        )
+        assertNull(shadowOf(am).lastAudioFocusRequest)
     }
 
     @Test
-    fun audioFocusLoss_tearsDownSession() {
-        service.startListening(Intent(), listener)
-        verify(timeout = 1500) { listener.readyForSpeech(any()) }
-
-        // Simulate the system handing audio focus to a phone call: invoke
-        // the listener that was registered at startListening time.
-        val app = ApplicationProvider.getApplicationContext<Application>()
-        val am = app.getSystemService(AudioManager::class.java)
-        val recordedReq = shadowOf(am).lastAudioFocusRequest!!
-        recordedReq.listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS)
-
-        // tearDownSession() runs synchronously on the main thread; the
-        // pipeline's close() is part of it, so we can assert on closeCalls
-        // without polling for long.
-        waitFor(1_000) { fakePipeline.closeCalls > 0 }
-    }
-
-    @Test
-    fun onCheckRecognitionSupport_modelsNotReady_marksLanguagesPending() {
+    fun onCheckRecognitionSupport_modelsNotReady_marksLanguagesSupportedForDownload() {
+        service.modelsReady = false
         val callback = mockk<RecognitionService.SupportCallback>(relaxed = true)
         service.checkRecognitionSupport(Intent(), callback)
 
@@ -178,17 +200,60 @@ class SpeechRecognitionServiceTest {
         val support = supportSlot.captured
 
         // Models aren't on disk in the test, so all advertised languages
-        // should be pending — never installed.
+        // should be supported for download — never installed.
         assertTrue("installed should be empty", support.installedOnDeviceLanguages.isEmpty())
         assertTrue(
-            "pending should include 'en'",
-            support.pendingOnDeviceLanguages.contains("en"),
+            "supported should include 'en'",
+            support.supportedOnDeviceLanguages.contains("en"),
         )
         assertEquals(
-            "pending should match SUPPORTED_LANGUAGES",
+            "supported should match SUPPORTED_LANGUAGES",
             SpeechRecognitionService.SUPPORTED_LANGUAGES,
-            support.pendingOnDeviceLanguages,
+            support.supportedOnDeviceLanguages,
         )
+    }
+
+    @Test
+    fun onCheckRecognitionSupport_requestedRegionalLanguageReturnsExactLocale() {
+        val callback = mockk<RecognitionService.SupportCallback>(relaxed = true)
+        val intent = Intent().putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
+
+        service.checkRecognitionSupport(intent, callback)
+
+        val supportSlot = slot<RecognitionSupport>()
+        verify(timeout = 1500) { callback.onSupportResult(capture(supportSlot)) }
+        assertEquals(
+            listOf("en-US", "en"),
+            supportSlot.captured.installedOnDeviceLanguages,
+        )
+    }
+
+    @Test
+    fun onCheckRecognitionSupport_unsupportedRequestedLanguageReportsError() {
+        val callback = mockk<RecognitionService.SupportCallback>(relaxed = true)
+        val intent = Intent().putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ja-JP")
+
+        service.checkRecognitionSupport(intent, callback)
+
+        verify { callback.onError(SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED) }
+    }
+
+    @Test
+    fun triggerModelDownload_supportedLanguageEnqueuesDownload() {
+        val intent = Intent().putExtra(RecognizerIntent.EXTRA_LANGUAGE, "de-DE")
+
+        service.triggerModelDownload(intent)
+
+        assertEquals(1, service.downloadRequests)
+    }
+
+    @Test
+    fun triggerModelDownload_unsupportedLanguageDoesNotEnqueueDownload() {
+        val intent = Intent().putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ja-JP")
+
+        service.triggerModelDownload(intent)
+
+        assertEquals(0, service.downloadRequests)
     }
 
     private fun waitFor(timeoutMs: Long, predicate: () -> Boolean) {
@@ -208,6 +273,9 @@ class SpeechRecognitionServiceTest {
     class TestableService : SpeechRecognitionService() {
         private lateinit var pipelineToInject: SpeechPipeline
         private lateinit var recordToInject: AudioRecord
+        var modelsReady = true
+        var downloadRequests = 0
+        var lastConfig: SpeechConfig? = null
 
         fun install(pipeline: SpeechPipeline, record: AudioRecord) {
             pipelineToInject = pipeline
@@ -222,11 +290,25 @@ class SpeechRecognitionServiceTest {
         fun checkRecognitionSupport(intent: Intent, callback: SupportCallback) =
             onCheckRecognitionSupport(intent, callback)
 
-        override fun createPipeline(config: SpeechConfig): SpeechPipeline = pipelineToInject
+        fun triggerModelDownload(intent: Intent) = onTriggerModelDownload(intent)
+
+        override fun createPipeline(config: SpeechConfig): SpeechPipeline {
+            lastConfig = config
+            return pipelineToInject
+        }
+
+        override fun areRecognitionModelsReady(): Boolean = modelsReady
+
+        override fun enqueueRecognitionModelDownload(recognizerIntent: Intent?): java.util.UUID {
+            downloadRequests++
+            return java.util.UUID.randomUUID()
+        }
 
         override suspend fun resolveModelDir(): String = "/fake/models"
 
-        override fun newAudioRecord(): AudioRecord = recordToInject
+        override fun newAudioRecordContext(listener: Callback): Context = this
+
+        override fun newAudioRecord(context: Context): AudioRecord = recordToInject
     }
 
     /** Minimal SpeechPipeline that records calls and lets the test push events. */

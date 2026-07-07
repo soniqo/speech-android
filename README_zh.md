@@ -133,7 +133,7 @@ adb shell settings put secure voice_recognition_service \
 
 **4. 验证**:运行演示应用的*识别器测试*界面,它调用 `SpeechRecognizer.createSpeechRecognizer(ctx)`(不带组件)并记录每个框架回调 — 无需 logcat 即可确认 binder 往返。
 
-服务实现了 `onCheckRecognitionSupport`(API 33+),返回 Parakeet-EOU 涵盖的 25 个 BCP-47 语言,在模型存在时标记为 `installedOnDeviceLanguage`(下载中时为 `pendingOnDeviceLanguage`)。会话期间使用 `AUDIOFOCUS_GAIN_TRANSIENT` 获取音频焦点。
+服务实现了 `onCheckRecognitionSupport`(API 33+),返回 Parakeet-EOU 涵盖的 25 个 BCP-47 基础语言;如果请求的精确地区标签映射到受支持的基础语言,也会返回该标签。模型存在时语言会标记为 `installedOnDeviceLanguage`,下载前标记为 `supportedOnDeviceLanguage`。服务不会从调用应用抢占音频焦点。
 
 **注意:** Gboard、三星键盘和 Google Assistant 都自带识别器,会跳过系统默认。显式调用框架 `SpeechRecognizer` API(或在其上构建自己 UI)的应用才会经过你的服务。
 
