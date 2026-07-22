@@ -52,7 +52,7 @@ Android के लिए ऑन-डिवाइस स्पीच SDK, [ONNX Ru
 
 ```kotlin
 dependencies {
-    implementation("audio.soniqo:speech:0.0.9")
+    implementation("audio.soniqo:speech:0.0.13")
 }
 ```
 

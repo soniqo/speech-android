@@ -72,8 +72,9 @@ mavenPublishing {
 
         licenses {
             license {
-                name.set("MIT License")
-                url.set("https://github.com/soniqo/speech-android/blob/main/LICENSE")
+                name.set("Apache License, Version 2.0")
+                url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                distribution.set("repo")
             }
         }
 
@@ -92,7 +93,7 @@ mavenPublishing {
         }
     }
 
-    publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
+    publishToMavenCentral()
     signAllPublications()
 }
 

@@ -34,6 +34,22 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Verify documented dependency version
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          expected="implementation(\"audio.soniqo:speech:${VERSION}\")"
+          readmes=(
+            README.md README_zh.md README_ja.md README_ko.md README_es.md
+            README_de.md README_fr.md README_hi.md README_pt.md README_ru.md
+          )
+          for readme in "${readmes[@]}"; do
+            if ! grep -Fq "$expected" "$readme"; then
+              echo "::error file=${readme}::Expected dependency snippet: ${expected}"
+              exit 1
+            fi
+          done
+
       - name: Build SDK
         run: ./gradlew :sdk:assembleRelease
 
@@ -64,6 +80,23 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.GPG_SIGNING_KEY_ID }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_SIGNING_KEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.GPG_SIGNING_PASSWORD }}
+          ORG_GRADLE_PROJECT_SONATYPE_CLOSE_TIMEOUT_SECONDS: 3600
+
+      - name: Verify Maven Central availability
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          artifact_url="https://repo1.maven.org/maven2/audio/soniqo/speech/${VERSION}/speech-${VERSION}.pom"
+          for attempt in {1..40}; do
+            if curl --fail --silent --output /dev/null "$artifact_url"; then
+              echo "Maven Central artifact is available: ${artifact_url}"
+              exit 0
+            fi
+            echo "Waiting for Maven Central availability (${attempt}/40)..."
+            sleep 15
+          done
+          echo "::error::Maven Central artifact did not become available: ${artifact_url}"
+          exit 1
 
       - name: Publish to GitHub Packages
         run: ./gradlew :sdk:publishAllPublicationsToGitHubPackagesRepository --no-configuration-cache -PVERSION_NAME=${{ steps.version.outputs.VERSION }}
