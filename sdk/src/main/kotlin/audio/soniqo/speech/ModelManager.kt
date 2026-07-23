@@ -771,6 +771,15 @@ object ModelManager {
         "kokoro-e2e.onnx" to 3_047_254L,
         "kokoro-e2e-realtime.onnx" to 2_413_312L,
         "kokoro-e2e.onnx.data" to 324_564_624L,
+        // Pocket TTS bundle — the Control demo's default TTS, so these matter
+        // for its bar; without them the total under-counts by ~126 MB and then
+        // visibly grows as the files self-correct to Content-Length.
+        "decoder.int8.onnx" to 22_695_710L,
+        "encoder.onnx" to 512_407L,
+        "lm_flow.int8.onnx" to 9_962_530L,
+        "lm_main.int8.onnx" to 76_341_079L,
+        "text_conditioner.onnx" to 16_388_498L,
+        "token_scores.json" to 123_617L,
         "us_gold.json" to 3_000_469L,
         "us_silver.json" to 3_099_517L,
         "dict_fr.json" to 51_497L,
