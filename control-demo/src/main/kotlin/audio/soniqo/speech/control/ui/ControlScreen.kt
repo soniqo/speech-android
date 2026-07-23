@@ -90,7 +90,10 @@ fun ControlScreen(
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
         Header(state, actions)
-        Chat(state.feed, state.downloadPercent != null, state.downloadStage, Modifier.weight(1f))
+        Chat(
+            state.feed, state.downloadPercent != null, state.downloadStage,
+            state.downloadDetail, Modifier.weight(1f),
+        )
         OrbDock(state, actions, reduceMotion)
         StatusLine(state)
     }
@@ -173,6 +176,7 @@ private fun Chat(
     feed: List<FeedItem>,
     setupVisible: Boolean,
     setupStage: String?,
+    setupDetail: String?,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -181,7 +185,7 @@ private fun Chat(
     }
     Box(modifier.fillMaxWidth()) {
         if (setupVisible) {
-            SetupPanel(setupStage, Modifier.align(Alignment.Center))
+            SetupPanel(setupStage, setupDetail, Modifier.align(Alignment.Center))
         } else if (feed.none { it is Turn }) {
             EmptyHint(Modifier.align(Alignment.Center))
         }
@@ -211,13 +215,17 @@ private fun Chat(
 }
 
 /**
- * First-run setup panel — the model download (~800 MB, one time). Progress
+ * First-run setup panel — the model download (~600 MB, one time). Progress
  * is shown as one dot per model, filling as each finishes, rather than raw
- * filenames. The bundle downloads in a foreground worker, so it continues
- * while the app is backgrounded.
+ * filenames, plus a bytes/rate/ETA line. The bundle downloads in a foreground
+ * worker, so it continues while the app is backgrounded.
  */
 @Composable
-private fun SetupPanel(currentStage: String?, modifier: Modifier = Modifier) {
+private fun SetupPanel(
+    currentStage: String?,
+    detail: String?,
+    modifier: Modifier = Modifier,
+) {
     // Download order = dot order. Each model is one dot.
     val models = listOf(
         "voice detection", "transcription model", "speech synthesis", "language model",
@@ -239,7 +247,7 @@ private fun SetupPanel(currentStage: String?, modifier: Modifier = Modifier) {
         Text("Setting up", color = Foreground, fontFamily = Grotesk,
             fontWeight = FontWeight.Bold, fontSize = 20.sp)
         Spacer(Modifier.height(8.dp))
-        Text("Downloading the models — about 800 MB, one time. Everything runs " +
+        Text("Downloading the models — about 600 MB, one time. Everything runs " +
             "on your phone and the download continues if you leave.",
             color = MutedFg, fontFamily = Grotesk, fontSize = 13.5.sp, lineHeight = 19.sp,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center)
@@ -257,6 +265,14 @@ private fun SetupPanel(currentStage: String?, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(12.dp))
         Text("${current + 1} of ${models.size}", color = FaintFg, fontFamily = Plex,
             fontSize = 11.sp)
+        // Bytes, rate and ETA. The dots alone can't distinguish a slow link
+        // from a stalled one — the ~290 MB LLM bundle sits inside a single dot
+        // for minutes.
+        detail?.let {
+            Spacer(Modifier.height(6.dp))
+            Text(it, color = FaintFg, fontFamily = Plex, fontSize = 11.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 

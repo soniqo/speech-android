@@ -30,6 +30,8 @@ data class ControlUiState(
     val downloadPercent: Int? = null,
     /** Friendly label of the model currently downloading (for the setup panel). */
     val downloadStage: String? = null,
+    /** `412 / 580 MB · 3.6 MB/s · 2 min left`, or null before the rate settles. */
+    val downloadDetail: String? = null,
     val memNowMb: Int = 0,
     val memPeakMb: Int = 0,
     /** Latencies of the most recent completed turn, for the status line. */
@@ -61,6 +63,8 @@ class ControlStore {
     fun setDownload(percent: Int?) = _state.update { it.copy(downloadPercent = percent) }
 
     fun setDownloadStage(stage: String?) = _state.update { it.copy(downloadStage = stage) }
+
+    fun setDownloadDetail(detail: String?) = _state.update { it.copy(downloadDetail = detail) }
 
     fun setMemory(nowMb: Int, peakMb: Int) =
         _state.update { it.copy(memNowMb = nowMb, memPeakMb = peakMb) }

@@ -101,6 +101,9 @@ class ControlAgentActivity : ComponentActivity() {
 
     private var pipelineStarted = false
     private var observingDownload = false
+    // True between a mic tap and the mic being stopped. Gates the permission
+    // callback so the startup request can't switch capture on unasked.
+    private var micRequested = false
     // STT model override for on-device A/B: `--es stt_model PARAKEET` selects
     // the 0.6B TDT v3; unset keeps DEMO_STT. Read before models load.
     private var sttOverride: String? = null
@@ -120,6 +123,12 @@ class ControlAgentActivity : ComponentActivity() {
     // grammar and the brand, plus the track titles/artists currently on the
     // device. The command core is always present; without media permission
     // listMusic() returns empty and only the fixed phrases apply.
+    //
+    // Reads the library through the silent [listMusicOrEmpty]: this runs during
+    // startup, and a user who has not yet answered the permission dialog should
+    // not see a "media permission not granted" note about a request they were
+    // never shown. The music tools still report the denial, because there it is
+    // what made the command fail.
     private fun buildContextPhrases(): List<String> {
         val phrases = mutableListOf(
             "Soniqo",
@@ -131,7 +140,7 @@ class ControlAgentActivity : ComponentActivity() {
             "what can you do",
         )
         runCatching {
-            device.listMusic(null).forEach { t ->
+            device.listMusicOrEmpty(null).forEach { t ->
                 if (t.title.isNotBlank()) phrases.add(t.title)
                 t.artist?.let { if (it.isNotBlank()) phrases.add(it) }
             }
@@ -139,11 +148,19 @@ class ControlAgentActivity : ComponentActivity() {
         return phrases.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
     }
 
+    /** Push the current biasing set at the pipeline, if one is running. */
+    private fun applyContextPhrases() {
+        if (EOU_BEAM_SIZE <= 1) return
+        pipeline?.let { runCatching { it.setContextPhrases(buildContextPhrases()) } }
+    }
+
     private var speechStartMs = 0L
     private var speechEndMs = 0L
 
     companion object {
         private const val TAG = "SpeechControl"
+
+        private const val REQ_PERMISSIONS = 1
 
         // STT model for the demo. PARAKEET_EOU is the low-memory default
         // (25 languages, ~232 MB) — fast, ~2 s round trip, ~1.3 GB total.
@@ -204,7 +221,41 @@ class ControlAgentActivity : ComponentActivity() {
             }
         }
         bench("baseline")
+        // Ask up front rather than on the first mic tap. The models take
+        // minutes to download, and the dialogs are dead time that fits inside
+        // it — but more importantly the demo reads contacts and the music
+        // library during startup (STT biasing) and on the very first command,
+        // so deferring the request produced "permission not granted" notes for
+        // dialogs the user had never been shown.
+        requestDemoPermissions()
         loadModels()
+    }
+
+    /**
+     * The runtime permissions the demo needs, requested as one batch. Android
+     * shows them as a sequence of per-group dialogs. On API 33+ the media
+     * permission is READ_MEDIA_AUDIO, which the system surfaces under
+     * "Music and audio" — not the pre-13 "Files and media" storage group.
+     */
+    private fun demoPermissions(): Array<String> = buildList {
+        add(Manifest.permission.RECORD_AUDIO)
+        add(Manifest.permission.READ_CONTACTS)
+        add(mediaPermission)
+        // Without this the foreground download worker runs but its progress
+        // notification is silently dropped, so leaving the app looks like the
+        // download stopped.
+        if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+    }.toTypedArray()
+
+    private fun missingPermissions(): List<String> = demoPermissions().filter {
+        checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestDemoPermissions() {
+        val missing = missingPermissions()
+        if (missing.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQ_PERMISSIONS)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -302,6 +353,16 @@ class ControlAgentActivity : ComponentActivity() {
                             store.setStatus("downloading $label")
                             store.setDownloadStage(label)
                             store.setDownload(info.progress.getInt(ModelDownloadWorker.KEY_PERCENT, 0))
+                            // Byte counts, rate and ETA. The LLM bundle alone is
+                            // ~290 MB, so without this the panel gives no way to
+                            // tell a slow link from a stalled one.
+                            store.setDownloadDetail(ModelDownloadWorker.detailLine(
+                                info.progress.getLong(
+                                    ModelDownloadWorker.KEY_TOTAL_BYTES_DOWNLOADED, 0L),
+                                info.progress.getLong(ModelDownloadWorker.KEY_TOTAL_BYTES, 0L),
+                                info.progress.getLong(ModelDownloadWorker.KEY_BYTES_PER_SEC, 0L),
+                                info.progress.getLong(ModelDownloadWorker.KEY_ETA_SECONDS, -1L),
+                            ))
                         }
                     }
                     WorkInfo.State.SUCCEEDED -> {
@@ -354,8 +415,9 @@ class ControlAgentActivity : ComponentActivity() {
                 p.start()
                 // Bias recognition toward the command grammar, the brand, and
                 // whatever music is on this device right now. No-op in greedy
-                // mode; only meaningful once EOU_BEAM_SIZE > 1.
-                if (EOU_BEAM_SIZE > 1) p.setContextPhrases(buildContextPhrases())
+                // mode; only meaningful once EOU_BEAM_SIZE > 1. Rebuilt by
+                // onRequestPermissionsResult if the media grant lands later.
+                applyContextPhrases()
 
                 store.setStatus("downloading language model")
                 store.setDownloadStage("language model")
@@ -364,11 +426,16 @@ class ControlAgentActivity : ComponentActivity() {
                     applicationContext,
                     llmModel = llmProfile,
                 ) { prog ->
-                    if (prog.fileTotalBytes > 0) {
-                        store.setDownload((prog.bytesDownloaded * 100 / prog.fileTotalBytes).toInt())
+                    // Normally a no-op: the worker already fetched the bundle
+                    // with includeLlm = true, so this just revalidates. It only
+                    // streams when that worker path failed and left it behind.
+                    if (prog.totalBytes > 0) {
+                        store.setDownload(ModelDownloadWorker.progressPercent(
+                            prog.totalBytesDownloaded, prog.totalBytes))
+                        store.setDownloadDetail(ModelDownloadWorker.detailLine(
+                            prog.totalBytesDownloaded, prog.totalBytes, 0L, -1L))
                     }
-                    store.setStatus("downloading language model · " +
-                        "${prog.bytesDownloaded / 1_000_000}/${prog.fileTotalBytes / 1_000_000} MB")
+                    store.setStatus("downloading language model")
                 }
                 val adapterPath = requireNotNull(
                     ModelManager.llmAdapterFile(applicationContext, llmProfile),
@@ -387,6 +454,7 @@ class ControlAgentActivity : ComponentActivity() {
 
                 ready = true
                 store.setDownload(null)
+                store.setDownloadDetail(null)
                 store.setMic(MicState.IDLE)
                 store.setStatus("ready · on-device")
                 p.nnapiFallbackReason?.let { Log.w(TAG, "NNAPI unavailable, using CPU: $it") }
@@ -776,6 +844,18 @@ class ControlAgentActivity : ComponentActivity() {
             if (checkSelfPermission(mediaPermission) != PackageManager.PERMISSION_GRANTED) {
                 store.addNote("media permission not granted"); return emptyList()
             }
+            return listMusicOrEmpty(query)
+        }
+
+        /**
+         * [listMusic] without the feed note. For callers where an empty library
+         * is a normal outcome rather than a failed command — STT biasing runs
+         * at startup, possibly before the permission dialog has been answered.
+         */
+        fun listMusicOrEmpty(query: String?): List<Track> {
+            if (checkSelfPermission(mediaPermission) != PackageManager.PERMISSION_GRANTED) {
+                return emptyList()
+            }
             val selection = query?.let {
                 "(${MediaStore.Audio.Media.TITLE} LIKE ? OR ${MediaStore.Audio.Media.ARTIST} LIKE ?)"
             }
@@ -847,18 +927,18 @@ class ControlAgentActivity : ComponentActivity() {
 
     private fun toggleMicrophone() {
         if (recording) {
+            micRequested = false
             stopMicrophone()
             store.setMic(MicState.IDLE)
             store.setStatus("tap to talk")
         } else {
-            val wanted = arrayOf(Manifest.permission.RECORD_AUDIO,
-                Manifest.permission.READ_CONTACTS, mediaPermission)
-            val missing = wanted.filter {
-                checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
-            }
-            if (missing.isNotEmpty()) {
-                ActivityCompat.requestPermissions(this, missing.toTypedArray(), 1); return
-            }
+            micRequested = true
+            // Normally already granted from onCreate; re-asking covers a user
+            // who dismissed the dialog during setup. Android returns an instant
+            // denial once a permission is permanently denied, and
+            // onRequestPermissionsResult still starts the mic if RECORD_AUDIO
+            // itself came through, so the button never becomes inert.
+            if (missingPermissions().isNotEmpty()) { requestDemoPermissions(); return }
             startMicrophone()
         }
     }
@@ -867,7 +947,20 @@ class ControlAgentActivity : ComponentActivity() {
         requestCode: Int, permissions: Array<String>, results: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, results)
-        if (requestCode == 1 &&
+        if (requestCode != REQ_PERMISSIONS) return
+
+        // Biasing was built during startup, when the media permission was
+        // likely still unanswered and the library read as empty. Now that there
+        // is an answer, rebuild it — otherwise track titles never reach the
+        // decoder until the app is restarted.
+        if (permissions.contains(mediaPermission) &&
+            checkSelfPermission(mediaPermission) == PackageManager.PERMISSION_GRANTED) {
+            applyContextPhrases()
+        }
+        // Only start capturing if the user asked for it: onCreate requests
+        // permissions before any mic tap, and a grant there must not switch the
+        // microphone on by itself.
+        if (micRequested &&
             checkSelfPermission(Manifest.permission.RECORD_AUDIO)
                 == PackageManager.PERMISSION_GRANTED) {
             startMicrophone()
