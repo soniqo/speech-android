@@ -200,6 +200,18 @@ object ModelManager {
         val fileTotalBytes: Long,
         val totalFiles: Int,
         val completed: Int,
+        /**
+         * Bytes on disk across every file this call still had to fetch —
+         * finished files plus the one in flight. Cached files contribute
+         * nothing, so this counts only what the transfer is responsible for.
+         */
+        val totalBytesDownloaded: Long = 0L,
+        /**
+         * Best estimate of [totalBytesDownloaded]'s ceiling, seeded from
+         * [EXPECTED_SIZES] and corrected to the real `Content-Length` as each
+         * file's response header arrives. 0 when nothing needs downloading.
+         */
+        val totalBytes: Long = 0L,
     )
 
     // Report intra-file byte progress at most this often. Without throttling,
@@ -450,6 +462,18 @@ object ModelManager {
         allFiles: List<ModelFile>,
         onProgress: ((Progress) -> Unit)?,
     ) {
+        // Byte budget for the progress bar. Weighting every file equally makes
+        // the bar lurch through the small JSON assets and then sit still for
+        // minutes on the two files that are ~93% of the bytes, so the bar is
+        // driven by bytes instead. Cached files are excluded from both sides of
+        // the ratio: the bar measures the transfer, not the manifest.
+        val pending = allFiles.filterNot { model ->
+            File(dir, model.localFilename).let { it.exists() && isValidModel(it, model.filename) }
+        }
+        var totalBytes = pending.sumOf { expectedBytes(it) }
+        // Bytes belonging to files this call has already finished.
+        var priorBytes = 0L
+
         var completed = 0
         for (model in allFiles) {
             val dest = File(dir, model.localFilename)
@@ -464,12 +488,81 @@ object ModelManager {
             }
             dest.parentFile?.mkdirs()
 
+            // Replaced by the real Content-Length on the first callback, which
+            // keeps [totalBytes] honest even when EXPECTED_SIZES is stale.
+            var expected = expectedBytes(model)
+            var fileBytes = 0L
+
             val url = "$BASE_URL/${model.repo}/resolve/${model.revision}/${model.filename}"
             downloadFile(url, dest) { bytes, fileTotal ->
-                onProgress?.invoke(Progress(model.localFilename, bytes, fileTotal, allFiles.size, completed))
+                if (fileTotal > 0 && fileTotal != expected) {
+                    totalBytes += fileTotal - expected
+                    expected = fileTotal
+                }
+                fileBytes = bytes
+                onProgress?.invoke(Progress(
+                    file = model.localFilename,
+                    bytesDownloaded = bytes,
+                    fileTotalBytes = fileTotal,
+                    totalFiles = allFiles.size,
+                    completed = completed,
+                    totalBytesDownloaded = priorBytes + bytes,
+                    totalBytes = totalBytes,
+                ))
             }
+            // Prefer the observed byte count; fall back to the estimate when the
+            // server advertised no length, so the running total still advances.
+            priorBytes += maxOf(fileBytes, expected)
             completed++
         }
+    }
+
+    /**
+     * Estimated bytes [ensureModels] must transfer for this configuration —
+     * expected sizes of every file not already cached and valid, or the whole
+     * manifest when the cache is stale and about to be cleared. 0 when
+     * everything needed is already on disk.
+     *
+     * Lets a caller driving two downloads back to back (pipeline models then
+     * the LLM bundle) render them as one continuous bar instead of two sweeps.
+     */
+    fun plannedModelBytes(
+        context: Context,
+        precision: ModelPrecision = ModelPrecision.INT8,
+        sttModel: SttModel = SttModel.PARAKEET_EOU,
+        sttBackend: SttBackend = SttBackend.ONNX,
+        ttsModel: TtsModel = TtsModel.KOKORO_SHORT_TURN,
+    ): Long {
+        val dir = modelDirFile(context, precision, sttModel, sttBackend, ttsModel)
+        val stale = cacheIsStale(dir, modelSetKey(precision, sttModel, sttBackend, ttsModel))
+        return plannedBytes(dir, models(precision, sttModel, sttBackend, ttsModel), stale)
+    }
+
+    /** [plannedModelBytes] for the FunctionGemma bundle fetched by [ensureLlmModels]. */
+    fun plannedLlmBytes(
+        context: Context,
+        llmModel: LlmModel = LlmModel.FUNCTIONGEMMA,
+    ): Long {
+        val dir = File(llmModelDir(context, llmModel))
+        // Mirrors ensureLlmModels: a directory with no markers is a fresh or
+        // in-progress download, never a stale cache to be wiped.
+        val hadMarkers = File(dir, "version.txt").exists() || File(dir, MODEL_SET_FILENAME).exists()
+        val stale = hadMarkers && cacheIsStale(dir, llmModelSetKey(llmModel))
+        return plannedBytes(dir, llmModels(llmModel), stale)
+    }
+
+    private fun plannedBytes(dir: File, files: List<ModelFile>, stale: Boolean): Long =
+        files.sumOf { model ->
+            val dest = File(dir, model.localFilename)
+            if (!stale && dest.exists() && isValidModel(dest, model.filename)) 0L
+            else expectedBytes(model)
+        }
+
+    private fun cacheIsStale(dir: File, wantedModelSet: String): Boolean {
+        if (!dir.exists()) return true
+        val cached = File(dir, "version.txt").takeIf { it.exists() }
+            ?.readText()?.trim()?.toIntOrNull() ?: 0
+        return cached < MODEL_VERSION || cachedModelSet(dir) != wantedModelSet
     }
 
     @VisibleForTesting
@@ -656,6 +749,43 @@ object ModelManager {
         // ensureModels() invocation after WorkManager's backoff window.
         throw IOException("Download failed after $maxRetries attempts: ${lastException?.message}", lastException)
     }
+
+    /**
+     * Published sizes of the model files, used to seed a byte-weighted
+     * progress bar before any response header has arrived. Only an estimate:
+     * [downloadMissingModels] corrects each entry to the real `Content-Length`
+     * as the download starts, so a stale value costs bar accuracy for a moment
+     * and nothing else. Files absent here are assumed [DEFAULT_EXPECTED_BYTES]
+     * (they are all small JSON assets).
+     *
+     * Keyed by repo filename like [MIN_SIZES], so the handful of names shared
+     * between bundles (Pocket and Parakeet both ship `vocab.json`, Pocket and
+     * Nemotron both ship `encoder.onnx`) collide. All of them are small enough
+     * that the mis-estimate is immaterial to the bar.
+     */
+    private val EXPECTED_SIZES = mapOf(
+        "silero-vad.onnx" to 2_243_022L,
+        "parakeet-eou-encoder.onnx" to 131_741_896L,
+        "parakeet-eou-decoder.onnx" to 15_757_826L,
+        "parakeet-eou-joint.onnx" to 5_589_132L,
+        "kokoro-e2e.onnx" to 3_047_254L,
+        "kokoro-e2e-realtime.onnx" to 2_413_312L,
+        "kokoro-e2e.onnx.data" to 324_564_624L,
+        "us_gold.json" to 3_000_469L,
+        "us_silver.json" to 3_099_517L,
+        "dict_fr.json" to 51_497L,
+        "dict_pt.json" to 37_438L,
+        "deepfilter-auxiliary.bin" to 126_976L,
+        "model.litertlm" to 297_212_528L,
+        "model-lora16-android.litertlm" to 327_438_928L,
+        "control-r4-rank16.tflite" to 9_502_720L,
+    )
+
+    /** Assumed size of a model file with no [EXPECTED_SIZES] entry. */
+    private const val DEFAULT_EXPECTED_BYTES = 256_000L
+
+    private fun expectedBytes(model: ModelFile): Long =
+        EXPECTED_SIZES[model.filename] ?: DEFAULT_EXPECTED_BYTES
 
     // ONNX files start with these bytes (protobuf magic for ONNX IR)
     private val ONNX_MAGIC = byteArrayOf(0x08, 0x0)

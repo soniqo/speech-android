@@ -79,6 +79,30 @@ class ModelDownloadWorker(
 
         runCatching { setForeground(buildForegroundInfo(0, "Preparing speech models…")) }
 
+        // The pipeline models and the LLM bundle are two back-to-back
+        // ensure*() calls, each reporting bytes only for its own set. Planning
+        // both up front lets them render as one continuous 0→100 bar instead
+        // of two sweeps that visibly reset to zero in the middle.
+        val plannedPipeline = ModelManager.plannedModelBytes(
+            applicationContext, precision, sttModel, sttBackend, ttsModel,
+        )
+        val plannedLlm =
+            if (includeLlm) ModelManager.plannedLlmBytes(applicationContext, llmModel) else 0L
+
+        // Bytes attributed to phases that have already finished, and bytes
+        // planned for phases not yet started. Both are folded into every
+        // sample so the numerator and denominator span the whole download.
+        var phaseBase = 0L
+        var laterPhases = plannedLlm
+
+        // Rate is measured from the first sample rather than from bytes
+        // already on disk, so resuming a partial download doesn't report an
+        // instant multi-hundred-MB/s spike.
+        var startedAtNanos = 0L
+        var baselineBytes = 0L
+        var lastPct = 0
+        var lastDone = 0L
+
         // Only rebuild the foreground notification when the integer percent or
         // the file changes — the underlying progress callback is already
         // throttled to ~1 MB, but re-posting a Notification on every tick still
@@ -86,12 +110,33 @@ class ModelDownloadWorker(
         var lastNotifiedPct = -1
         var lastNotifiedFile = ""
         val report: (ModelManager.Progress) -> Unit = { p ->
-            val pct = progressPercent(
-                p.completed,
-                p.totalFiles,
-                p.bytesDownloaded,
-                p.fileTotalBytes,
-            )
+            val done = phaseBase + p.totalBytesDownloaded
+            val total = phaseBase + p.totalBytes + laterPhases
+            lastDone = done
+
+            if (startedAtNanos == 0L) {
+                startedAtNanos = System.nanoTime()
+                baselineBytes = done
+            }
+            val elapsedSec = (System.nanoTime() - startedAtNanos) / 1_000_000_000.0
+            val transferred = done - baselineBytes
+            // Below a second of samples the rate is mostly noise; suppress it
+            // rather than show an ETA that swings by minutes.
+            val bytesPerSec =
+                if (elapsedSec >= 1.0 && transferred > 0) (transferred / elapsedSec).toLong() else 0L
+            val etaSec =
+                if (bytesPerSec > 0 && total > done) (total - done) / bytesPerSec else -1L
+
+            // Byte-weighted when a total is known, else the legacy file-count
+            // estimate. Clamped monotonic: refining the total against a real
+            // Content-Length can otherwise nudge the bar backwards.
+            val pct = if (total > 0) {
+                progressPercent(done, total)
+            } else {
+                progressPercent(p.completed, p.totalFiles, p.bytesDownloaded, p.fileTotalBytes)
+            }.coerceAtLeast(lastPct)
+            lastPct = pct
+
             setProgressAsync(workDataOf(
                 KEY_FILE to p.file,
                 KEY_COMPLETED to p.completed,
@@ -99,6 +144,10 @@ class ModelDownloadWorker(
                 KEY_BYTES_DOWNLOADED to p.bytesDownloaded,
                 KEY_FILE_TOTAL_BYTES to p.fileTotalBytes,
                 KEY_PERCENT to pct,
+                KEY_TOTAL_BYTES_DOWNLOADED to done,
+                KEY_TOTAL_BYTES to total,
+                KEY_BYTES_PER_SEC to bytesPerSec,
+                KEY_ETA_SECONDS to etaSec,
             ))
             if (pct != lastNotifiedPct || p.file != lastNotifiedFile) {
                 lastNotifiedPct = pct
@@ -106,8 +155,7 @@ class ModelDownloadWorker(
                 runCatching {
                     setForegroundAsync(buildForegroundInfo(
                         percent = pct,
-                        text = "${p.file}  ${formatMb(p.bytesDownloaded)}/${formatMb(p.fileTotalBytes)}" +
-                            "  ·  ${p.completed}/${p.totalFiles}",
+                        text = detailLine(done, total, bytesPerSec, etaSec),
                     ))
                 }
             }
@@ -123,6 +171,12 @@ class ModelDownloadWorker(
                 onProgress = report,
             )
             if (includeLlm) {
+                // Hand the bar over to the LLM phase: what the pipeline phase
+                // actually transferred is now behind us, and nothing is ahead.
+                // Falls back to the estimate when the pipeline was fully cached
+                // and never reported a sample.
+                phaseBase = if (lastDone > 0L) lastDone else plannedPipeline
+                laterPhases = 0L
                 ModelManager.ensureLlmModels(
                     applicationContext,
                     llmModel = llmModel,
@@ -176,6 +230,55 @@ class ModelDownloadWorker(
         const val UNIQUE_NAME = "audio.soniqo.speech.modelDownload"
 
         /**
+         * Byte-weighted completion percent (0-100) over the whole download.
+         *
+         * The file-count form below weights a 2 KB `config.json` the same as a
+         * 325 MB weights blob, so on the default manifest the bar sprints
+         * through fifteen small assets and then appears frozen for minutes on
+         * the two files that are ~93% of the transfer. Scaling by bytes makes
+         * the bar advance at the rate the network actually delivers.
+         *
+         * Pure + side-effect free so it is unit-testable.
+         */
+        fun progressPercent(bytesDownloaded: Long, totalBytes: Long): Int {
+            if (totalBytes <= 0L) return 0
+            return ((bytesDownloaded.toDouble() / totalBytes) * 100.0)
+                .toInt().coerceIn(0, 100)
+        }
+
+        /**
+         * Human-readable transfer line: `412 / 789 MB · 3.6 MB/s · 2 min left`.
+         * Rate and ETA are dropped until there is enough history to make them
+         * meaningful, so the text degrades to just the byte counts.
+         */
+        fun detailLine(
+            bytesDownloaded: Long,
+            totalBytes: Long,
+            bytesPerSec: Long,
+            etaSeconds: Long,
+        ): String = buildList {
+            add(
+                if (totalBytes > 0) {
+                    "%.0f / %.0f MB".format(
+                        bytesDownloaded / 1_000_000.0, totalBytes / 1_000_000.0,
+                    )
+                } else {
+                    "%.0f MB".format(bytesDownloaded / 1_000_000.0)
+                }
+            )
+            if (bytesPerSec > 0) add("%.1f MB/s".format(bytesPerSec / 1_000_000.0))
+            if (etaSeconds >= 0) add("${formatEta(etaSeconds)} left")
+        }.joinToString(" · ")
+
+        // Minutes round rather than truncate: flooring reports 105 s as
+        // "1 min left", which then sits there for nearly two.
+        private fun formatEta(seconds: Long): String = when {
+            seconds < 60 -> "${seconds}s"
+            seconds < 3600 -> "${(seconds + 30) / 60} min"
+            else -> "%.1f h".format(seconds / 3600.0)
+        }
+
+        /**
          * Download completion percent (0-100) that advances *continuously* as
          * the current file streams, instead of only when a whole file lands.
          * It is the count of fully-finished files plus the fraction of the
@@ -221,6 +324,15 @@ class ModelDownloadWorker(
         const val KEY_BYTES_DOWNLOADED = "bytesDownloaded"
         const val KEY_FILE_TOTAL_BYTES = "fileTotalBytes"
         const val KEY_PERCENT = "percent"
+
+        /** Bytes transferred so far across the whole download (Long). */
+        const val KEY_TOTAL_BYTES_DOWNLOADED = "totalBytesDownloaded"
+        /** Estimated size of the whole download (Long); 0 when unknown. */
+        const val KEY_TOTAL_BYTES = "totalBytes"
+        /** Observed transfer rate (Long, bytes/sec); 0 until it settles. */
+        const val KEY_BYTES_PER_SEC = "bytesPerSec"
+        /** Seconds remaining at the current rate (Long); -1 when unknown. */
+        const val KEY_ETA_SECONDS = "etaSeconds"
 
         private const val CHANNEL_ID = "audio.soniqo.speech.models"
         // Stable, unlikely-to-collide id (decimal of 0xC0FFEE).

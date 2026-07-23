@@ -130,4 +130,92 @@ class DownloadProgressTest {
         )
         assertEquals(100, samples.last().percent)
     }
+
+    // -----------------------------------------------------------------------
+    // Byte-weighted bar. The file-count form above still advances within a
+    // file, but weights a 2 KB config.json the same as the 325 MB weights
+    // blob — so it spends ~60% of the bar on ~2% of the bytes. These cover the
+    // byte-weighted overload that replaces it.
+    // -----------------------------------------------------------------------
+
+    /** Real published sizes, pipeline set then the LLM bundle. */
+    private val pipelineBytes = manifest.sumOf { it.bytes }
+    private val llmBytes = 297 * MB
+
+    private fun byteSamples(): List<Int> {
+        val out = ArrayList<Int>()
+        var done = 0L
+        val total = pipelineBytes + llmBytes
+        for (m in manifest + Sized("model.litertlm", llmBytes)) {
+            var fileBytes = 0L
+            while (fileBytes < m.bytes) {
+                fileBytes = minOf(m.bytes, fileBytes + CHUNK)
+                out += ModelDownloadWorker.progressPercent(done + fileBytes, total)
+            }
+            done += m.bytes
+        }
+        return out
+    }
+
+    @Test
+    fun `byte weighted percent tracks the fraction of bytes transferred`() {
+        assertEquals(0, ModelDownloadWorker.progressPercent(0, 800 * MB))
+        assertEquals(25, ModelDownloadWorker.progressPercent(200 * MB, 800 * MB))
+        assertEquals(50, ModelDownloadWorker.progressPercent(400 * MB, 800 * MB))
+        assertEquals(100, ModelDownloadWorker.progressPercent(800 * MB, 800 * MB))
+    }
+
+    @Test
+    fun `byte weighted percent clamps and tolerates an unknown total`() {
+        assertEquals(0, ModelDownloadWorker.progressPercent(1, 0))
+        // A refined Content-Length can briefly exceed the seeded estimate.
+        assertEquals(100, ModelDownloadWorker.progressPercent(900 * MB, 789 * MB))
+    }
+
+    @Test
+    fun `dominant file gets bar time proportional to its bytes`() {
+        // kokoro-e2e.onnx.data is 325 of 789 MB. Under file-count weighting it
+        // was worth 5 of 100 points while taking ~40% of the wall clock.
+        val total = pipelineBytes + llmBytes
+        val before = manifest.takeWhile { it.name != "kokoro-e2e.onnx.data" }.sumOf { it.bytes }
+        val start = ModelDownloadWorker.progressPercent(before, total)
+        val end = ModelDownloadWorker.progressPercent(before + 325 * MB, total)
+        assertTrue(
+            "the 325 MB blob should own ~40 points of the bar, got ${end - start}",
+            (end - start) in 38..43,
+        )
+    }
+
+    @Test
+    fun `byte weighted run is monotonic, ends at 100, and never resets`() {
+        val samples = byteSamples()
+        assertTrue(
+            "byte-weighted percent must never decrease",
+            samples.zipWithNext().all { (a, b) -> b >= a },
+        )
+        assertEquals(100, samples.last())
+        // The LLM phase used to restart its own 0→100 sweep. Once the pipeline
+        // set is done the bar must already be well past zero and stay there.
+        val afterPipeline = ModelDownloadWorker.progressPercent(
+            pipelineBytes, pipelineBytes + llmBytes,
+        )
+        assertTrue("bar should be ~62% when the LLM phase starts, was $afterPipeline",
+            afterPipeline in 58..66)
+    }
+
+    @Test
+    fun `detail line reports bytes, rate and eta`() {
+        assertEquals(
+            "412 / 789 MB · 3.6 MB/s · 2 min left",
+            ModelDownloadWorker.detailLine(412_000_000, 789_000_000, 3_600_000, 105),
+        )
+    }
+
+    @Test
+    fun `detail line drops rate and eta until they settle`() {
+        assertEquals(
+            "12 / 789 MB",
+            ModelDownloadWorker.detailLine(12_000_000, 789_000_000, 0, -1),
+        )
+    }
 }
