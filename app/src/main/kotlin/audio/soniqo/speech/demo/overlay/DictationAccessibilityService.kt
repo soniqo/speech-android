@@ -100,11 +100,18 @@ class DictationAccessibilityService : AccessibilityService() {
     }
 
     private fun setText(node: AccessibilityNodeInfo, text: String): Boolean {
-        val existing = node.text?.toString().orEmpty()
+        val existing = TextInsertion.existingText(
+            text = node.text?.toString(),
+            hint = node.hintText?.toString(),
+            showingHint = node.isShowingHintText,
+        )
+        // Selection offsets describe the hint when one is displayed, so they
+        // are meaningless once it is treated as empty.
+        val hasContent = existing.isNotEmpty()
         val result = TextInsertion.insert(
             existing = existing,
-            selStart = node.textSelectionStart,
-            selEnd = node.textSelectionEnd,
+            selStart = if (hasContent) node.textSelectionStart else 0,
+            selEnd = if (hasContent) node.textSelectionEnd else 0,
             insert = text,
         )
 

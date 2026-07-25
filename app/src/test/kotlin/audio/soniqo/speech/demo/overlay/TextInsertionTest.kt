@@ -66,6 +66,30 @@ class TextInsertionTest {
     }
 
     @Test
+    fun displayedHintCountsAsEmpty() {
+        // Telegram's empty composer reports "Message" as its text.
+        assertEquals("", TranscriptHintCase.telegramEmpty())
+        assertEquals("", TextInsertion.existingText("Message", "Message", true))
+        assertEquals("", TextInsertion.existingText("Message", "Message", false))
+    }
+
+    @Test
+    fun realTextIsKeptEvenWhenItMatchesNoHint() {
+        assertEquals("hello", TextInsertion.existingText("hello", "Message", false))
+        assertEquals("hello", TextInsertion.existingText("hello", null, false))
+    }
+
+    @Test
+    fun dictatingIntoAHintedEmptyFieldDoesNotKeepTheHint() {
+        val existing = TextInsertion.existingText("Message", "Message", true)
+        assertEquals("Hello there.", TextInsertion.insert(existing, 0, 0, "Hello there.").text)
+    }
+
+    private object TranscriptHintCase {
+        fun telegramEmpty() = TextInsertion.existingText("Message", "Message", true)
+    }
+
+    @Test
     fun endSelectionBeforeStartIsTreatedAsCaret() {
         val result = TextInsertion.insert("hello world", 5, 2, "x")
         assertEquals("hello x world", result.text)

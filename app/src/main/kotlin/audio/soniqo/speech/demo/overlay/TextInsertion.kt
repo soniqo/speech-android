@@ -15,6 +15,21 @@ object TextInsertion {
     private const val CLINGING = ",.!?;:)]}'’”%"
 
     /**
+     * The field's real content, treating a displayed hint as empty.
+     *
+     * An empty field often reports its placeholder through `text` — Telegram's
+     * composer returns "Message" — so inserting naively appends the dictation
+     * to the placeholder. [showingHint] is the node's own flag; the [hint]
+     * comparison catches apps that populate `hintText` but never set it.
+     */
+    fun existingText(text: String?, hint: String?, showingHint: Boolean): String {
+        if (showingHint) return ""
+        val actual = text.orEmpty()
+        if (!hint.isNullOrEmpty() && actual == hint) return ""
+        return actual
+    }
+
+    /**
      * Splice [insert] into [existing] at the cursor / selection given by
      * [selStart]..[selEnd]. Out-of-range or unknown (-1) offsets mean "append
      * at the end", which is what accessibility nodes report when a field has
