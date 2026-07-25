@@ -60,6 +60,9 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // android.util.Log is a no-op under unit tests rather than throwing,
+        // so production code can log on paths the tests exercise.
+        unitTests.isReturnDefaultValues = true
     }
 }
 

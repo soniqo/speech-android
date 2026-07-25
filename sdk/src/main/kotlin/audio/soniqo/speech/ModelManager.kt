@@ -711,26 +711,38 @@ object ModelManager {
                 // Content-Range carries the authoritative total on a 206 and
                 // is present even when Content-Length is not, so it is the
                 // better source when resuming.
-                val rangeTotal = if (isResume) {
-                    response.header("Content-Range")
-                        ?.substringAfter('/', "")
-                        ?.trim()
-                        ?.toLongOrNull()
-                        ?: 0L
-                } else {
-                    0L
+                val contentRange = if (isResume) response.header("Content-Range") else null
+                val rangeTotal = contentRange
+                    ?.substringAfter('/', "")
+                    ?.trim()
+                    ?.toLongOrNull()
+                    ?: 0L
+
+                // A 206 does not guarantee the body starts where we asked. A
+                // server (or CDN) that answers from byte 0 while we append at
+                // our offset produces a file larger than the real one, with a
+                // valid header and a corrupt middle — which no minimum-size
+                // check can catch. Start over when the offsets disagree.
+                val rangeStart = contentRange
+                    ?.substringAfter("bytes ", "")
+                    ?.substringBefore('-', "")
+                    ?.trim()
+                    ?.toLongOrNull()
+                val append = isResume && (rangeStart == null || rangeStart == existingBytes)
+                if (isResume && !append) {
+                    LOGI("Range ignored by server (asked $existingBytes, got $rangeStart); restarting")
                 }
                 val fileTotal = when {
                     rangeTotal > 0 -> rangeTotal
                     contentLength <= 0 -> 0L
-                    isResume -> existingBytes + contentLength
+                    append -> existingBytes + contentLength
                     else -> contentLength
                 }
 
-                FileOutputStream(tmp, isResume).use { output ->
+                FileOutputStream(tmp, append).use { output ->
                     body.byteStream().use { input ->
                         val buf = ByteArray(65536)
-                        var total = if (isResume) existingBytes else 0L
+                        var total = if (append) existingBytes else 0L
                         var lastReported = -1L
                         onBytes(total, fileTotal)
                         while (true) {

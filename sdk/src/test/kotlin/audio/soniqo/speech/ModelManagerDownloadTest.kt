@@ -181,6 +181,29 @@ class ModelManagerDownloadTest {
     }
 
     @Test
+    fun `206 answering from the wrong offset restarts rather than appending`() {
+        // Seen against a real CDN: we ask for bytes=4- and get a 206 whose
+        // body starts at 0. Appending it produced a file larger than the real
+        // one, with a valid header and a corrupt middle — which a
+        // minimum-size check cannot catch.
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setBody("ABCDEFGHIJKLMNOP")
+                .setHeader("Content-Range", "bytes 0-15/16")
+        )
+
+        val dest = File(tmpDir.root, "model.onnx")
+        File(tmpDir.root, "model.onnx.tmp").writeText("ABCD")
+
+        download(dest)
+
+        assertEquals("bytes=4-", server.takeRequest().getHeader("Range"))
+        assertEquals("ABCDEFGHIJKLMNOP", dest.readText())
+        assertEquals(16L, dest.length())
+    }
+
+    @Test
     fun `complete resume is still accepted`() {
         server.enqueue(
             MockResponse()
