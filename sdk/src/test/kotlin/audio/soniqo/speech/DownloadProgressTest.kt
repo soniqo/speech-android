@@ -35,7 +35,14 @@ class DownloadProgressTest {
         Sized("dict_it.json", 1 * MB),
         Sized("dict_pt.json", 1 * MB),
         Sized("dict_hi.json", 1 * MB),
-        Sized("voices/af_heart.bin", 1 * MB),
+        Sized("voices/af_heart.bin", 1_024),
+        Sized("voices/ff_siwis.bin", 1_024),
+        Sized("voices/ef_dora.bin", 1_024),
+        Sized("voices/if_sara.bin", 1_024),
+        Sized("voices/pf_dora.bin", 1_024),
+        Sized("voices/hf_alpha.bin", 1_024),
+        Sized("voices/jf_alpha.bin", 1_024),
+        Sized("voices/zf_xiaobei.bin", 1_024),
         Sized("deepfilter-auxiliary.bin", 2 * MB),
     )
     private val totalFiles = manifest.size
@@ -75,17 +82,17 @@ class DownloadProgressTest {
 
     @Test
     fun `percent adds completed files plus fraction of the file in flight`() {
-        assertEquals(5, ModelDownloadWorker.progressPercent(1, 19, 0, 132 * MB))
-        assertEquals(7, ModelDownloadWorker.progressPercent(1, 19, 66 * MB, 132 * MB))
-        assertEquals(42, ModelDownloadWorker.progressPercent(8, 19, 0, 325 * MB))
-        assertEquals(100, ModelDownloadWorker.progressPercent(19, 19, 0, 0))
+        assertEquals(3, ModelDownloadWorker.progressPercent(1, totalFiles, 0, 132 * MB))
+        assertEquals(5, ModelDownloadWorker.progressPercent(1, totalFiles, 66 * MB, 132 * MB))
+        assertEquals(30, ModelDownloadWorker.progressPercent(8, totalFiles, 0, 325 * MB))
+        assertEquals(100, ModelDownloadWorker.progressPercent(totalFiles, totalFiles, 0, 0))
     }
 
     @Test
     fun `unknown file size falls back to file count`() {
         // When the server doesn't advertise a length, the in-flight file adds
         // no fraction — whole-file granularity for that file only.
-        assertEquals(5, ModelDownloadWorker.progressPercent(1, 19, 12345, 0))
+        assertEquals(3, ModelDownloadWorker.progressPercent(1, totalFiles, 12345, 0))
     }
 
     @Test
@@ -100,11 +107,11 @@ class DownloadProgressTest {
         val distinct = largeFile.map { it.percent }.toSet()
         assertTrue(
             "large file percent should advance through several values, got $distinct",
-            distinct.size >= 6,
+            distinct.size >= 4,
         )
-        // One file's worth of the 19-file bar: ~42% -> ~47%.
-        assertEquals(42, largeFile.first().percent)
-        assertEquals(47, largeFile.last().percent)
+        // One file's worth of the 26-file bar: ~30% -> ~34%.
+        assertEquals(30, largeFile.first().percent)
+        assertEquals(34, largeFile.last().percent)
         assertTrue(
             "large file percent must never go backwards",
             largeFile.zipWithNext().all { (a, b) -> b.percent >= a.percent },
@@ -116,8 +123,16 @@ class DownloadProgressTest {
         val largeFile = simulate().filter { it.file == "kokoro-e2e.onnx.data" }
         val midpoint = largeFile.first { it.fileBytes >= it.fileTotal / 2 }
         assertTrue(
-            "halfway through the large file the bar should read >= 44, was ${midpoint.percent}",
-            midpoint.percent >= 44,
+            "halfway through the large file the bar should read >= 32, was ${midpoint.percent}",
+            midpoint.percent >= 32,
+        )
+    }
+
+    @Test
+    fun `fixture matches the default model manifest`() {
+        assertEquals(
+            ModelManager.models(ModelPrecision.INT8).map { it.localFilename },
+            manifest.map { it.name },
         )
     }
 

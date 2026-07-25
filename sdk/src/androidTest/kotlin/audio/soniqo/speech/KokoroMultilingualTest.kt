@@ -9,6 +9,7 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 /**
  * Multilingual TTS phonemizer integration tests.
@@ -18,9 +19,9 @@ import org.junit.runner.RunWith
  * tests exercise the full VAD -> STT -> TTS chain in echo mode and confirm
  * that non-ASCII characters flowing through the pipeline do not cause errors.
  *
- * Each test pushes a speech-like signal, waits for the echo TTS to produce
- * audio, and validates the output. If VAD does not trigger on the synthetic
- * signal the test passes silently (same pattern as KokoroTtsTest).
+ * Most tests push a speech-like signal and tolerate VAD not triggering on the
+ * synthetic input. The direct Chinese synthesis test is strict: it verifies
+ * the compact language voice is present and produces valid PCM.
  */
 @RunWith(AndroidJUnit4::class)
 class KokoroMultilingualTest {
@@ -187,26 +188,35 @@ class KokoroMultilingualTest {
     // -----------------------------------------------------------------
 
     @Test
-    fun chineseTextDoesNotCrashPipeline() = runBlocking {
-        val config = SpeechConfig(modelDir = modelDir, useNnapi = false)
-        val pipeline = SpeechPipeline(config)
-        pipeline.start()
+    fun chinesePinyinSynthesizesWithBundledVoice() {
+        val voice = File(modelDir, "voices/zf_xiaobei.bin")
+        assertTrue("Chinese voice should be downloaded", voice.isFile)
+        assertEquals("Voice must contain one 256-float style vector", 1024L, voice.length())
 
-        pushChunked(pipeline, speechSignal(freqHz = 260.0))
-        pushChunked(pipeline, silenceSignal())
-
+        val synthesizer = SpeechSynthesizer(
+            SpeechSynthesizerConfig(
+                modelDir = modelDir,
+                useNnapi = false,
+                ttsModel = TtsModel.KOKORO_SHORT_TURN,
+            )
+        )
         try {
-            val event = withTimeout(30_000) {
-                pipeline.events.first { it is SpeechEvent.ResponseAudioDelta }
-            }
-            val audio = event as SpeechEvent.ResponseAudioDelta
-            assertTrue("Audio should not be empty", audio.audio.isNotEmpty())
-        } catch (_: Exception) {
-            // Pass silently if VAD does not trigger
+            // speech-core's Chinese G2P currently accepts space-separated
+            // pinyin; Han-to-pinyin conversion remains an upstream concern.
+            val result = synthesizer.synthesize("ni3 hao3, shi4 jie4.", "zh")
+            assertEquals(24_000, result.sampleRate)
+            assertTrue("Chinese TTS output should not be empty", result.pcm16.isNotEmpty())
+            assertTrue(
+                "Chinese TTS output should contain non-zero PCM",
+                result.pcm16.any { it != 0.toByte() },
+            )
+            assertTrue(
+                "Chinese TTS output is suspiciously short (${result.pcm16.size} bytes)",
+                result.pcm16.size >= 4_800,
+            )
+        } finally {
+            synthesizer.close()
         }
-
-        pipeline.stop()
-        pipeline.close()
     }
 
     // -----------------------------------------------------------------

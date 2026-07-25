@@ -134,6 +134,13 @@ object ModelManager {
             ModelFile("Kokoro-82M-ONNX", "dict_pt.json"),
             ModelFile("Kokoro-82M-ONNX", "dict_hi.json"),
             ModelFile("Kokoro-82M-ONNX", "voices/af_heart.bin"),
+            ModelFile("Kokoro-82M-ONNX", "voices/ff_siwis.bin"),
+            ModelFile("Kokoro-82M-ONNX", "voices/ef_dora.bin"),
+            ModelFile("Kokoro-82M-ONNX", "voices/if_sara.bin"),
+            ModelFile("Kokoro-82M-ONNX", "voices/pf_dora.bin"),
+            ModelFile("Kokoro-82M-ONNX", "voices/hf_alpha.bin"),
+            ModelFile("Kokoro-82M-ONNX", "voices/jf_alpha.bin"),
+            ModelFile("Kokoro-82M-ONNX", "voices/zf_xiaobei.bin"),
         )
         // Four LiteRT graphs + the G2P-free tokenizer assets + the 10-voice catalog.
         TtsModel.SUPERTONIC -> listOf(
@@ -682,8 +689,20 @@ object ModelManager {
         "control-r4-rank16.tflite" to 9_000_000L,        // ~9.5 MB Control adapter
     )
 
-    private fun isValidModel(file: File, filename: String): Boolean {
+    @VisibleForTesting
+    internal fun isValidModel(file: File, filename: String): Boolean {
         if (file.length() == 0L) return false
+
+        // speech-core passes one [1, 256] float32 style vector to Kokoro.
+        // Upstream voice tables are much larger and must be compacted before
+        // publication; accepting one here would silently read the wrong row.
+        if (
+            filename.startsWith("voices/") &&
+            filename.endsWith(".bin") &&
+            file.length() != KOKORO_VOICE_BYTES
+        ) {
+            return false
+        }
 
         // Check minimum size for known large files
         MIN_SIZES[filename]?.let { minSize ->
@@ -705,6 +724,8 @@ object ModelManager {
 
         return true
     }
+
+    private const val KOKORO_VOICE_BYTES = 256L * 4L
 
     private fun LOGI(msg: String) = Log.i("Speech", msg)
 }

@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.nio.file.Files
 
 /**
  * Regression coverage for issue #36.
@@ -87,12 +88,47 @@ class ModelManagerManifestTest {
                 ModelManager.ModelFile("Kokoro-82M-ONNX", "dict_pt.json"),
                 ModelManager.ModelFile("Kokoro-82M-ONNX", "dict_hi.json"),
                 ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/af_heart.bin"),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/ff_siwis.bin"),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/ef_dora.bin"),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/if_sara.bin"),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/pf_dora.bin"),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/hf_alpha.bin"),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/jf_alpha.bin"),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/zf_xiaobei.bin"),
             ),
             files,
         )
         assertFalse(files.any { it.repo.contains("Parakeet") || it.repo.contains("Silero") })
         assertFalse(files.any { it.filename.startsWith("deepfilter") })
         assertEquals(1, files.count { it.filename == "kokoro-e2e.onnx.data" })
+    }
+
+    @Test
+    fun `Kokoro runtime voices must contain exactly one style vector`() {
+        val dir = Files.createTempDirectory("kokoro-voice-validation").toFile()
+        try {
+            val valid = dir.resolve("valid.bin").apply {
+                writeBytes(ByteArray(256 * 4) { 1 })
+            }
+            val truncated = dir.resolve("truncated.bin").apply {
+                writeBytes(ByteArray(256 * 4 - 1) { 1 })
+            }
+            val upstreamTable = dir.resolve("upstream-table.bin").apply {
+                writeBytes(ByteArray(510 * 256 * 4) { 1 })
+            }
+
+            assertTrue(
+                ModelManager.isValidModel(valid, "voices/zf_xiaobei.bin"),
+            )
+            assertFalse(
+                ModelManager.isValidModel(truncated, "voices/zf_xiaobei.bin"),
+            )
+            assertFalse(
+                ModelManager.isValidModel(upstreamTable, "voices/zf_xiaobei.bin"),
+            )
+        } finally {
+            dir.deleteRecursively()
+        }
     }
 
     @Test
