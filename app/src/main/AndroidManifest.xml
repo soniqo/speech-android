@@ -4,6 +4,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- API 33+: required to show the model-download progress notification. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Floating dictation bubble drawn on top of other apps. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <application
         android:allowBackup="false"
@@ -31,6 +35,30 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden|uiMode" />
         <activity android:name=".SpeechRecognizerTestActivity" android:exported="false"
             android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden|uiMode" />
+        <activity android:name=".overlay.VoiceOverlayActivity" android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden|uiMode" />
+
+        <!-- Holds the floating bubble and the mic while the user dictates in
+             another app, so it must be a microphone-type foreground service. -->
+        <service
+            android:name=".overlay.OverlayBubbleService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- Types the transcript into the focused field of whichever app is
+             in the foreground. -->
+        <service
+            android:name=".overlay.DictationAccessibilityService"
+            android:exported="true"
+            android:label="Speech dictation"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/dictation_accessibility_service" />
+        </service>
 
         <!-- Settings entry the system Voice-input picker opens via the gear -->
         <activity

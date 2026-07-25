@@ -100,6 +100,7 @@ O módulo [`app/`](app/) é uma demo mínima de assistente de voz com:
 - Visualização de forma de onda VAD em tempo real
 - Modo eco: transcreve a fala e a sintetiza de volta (sem LLM)
 - Modo ditado: resultados parciais em streaming
+- Sobreposição de voz: botão de microfone flutuante para ditar em qualquer app
 - STT Parakeet TDT de 114 idiomas nas telas de eco e ditado
 - Tela de teste `SpeechRecognizer` — exercita o caminho de entrada de voz em todo o sistema
 - UI de bolhas de chat com exibição de latência STT/TTS
@@ -107,6 +108,32 @@ O módulo [`app/`](app/) é uma demo mínima de assistente de voz com:
 ```bash
 ./gradlew :app:installDebug
 ```
+
+### Sobreposição de voz (ditar em qualquer app)
+
+A **sobreposição de voz** coloca um botão de microfone arrastável sobre outros
+apps. Ao tocá-lo ele vira **■ parar** / **✕ cancelar**: parar escreve a
+transcrição no campo de texto que estiver em foco e cancelar a descarta. Se
+nenhum campo editável estiver em foco, o texto vai para a área de transferência
+em vez de se perder.
+
+São necessárias três permissões, cada uma com sua própria tela do sistema — a
+tela de configuração mostra quais ainda faltam:
+
+| Permissão | Para quê |
+| --- | --- |
+| Microfone | capturar áudio |
+| Sobrepor a outros apps | desenhar o botão fora do app |
+| Serviço de acessibilidade | escrever no campo de texto de outro app |
+
+A janela da sobreposição é deliberadamente não focável, para que o campo de
+destino mantenha o foco de entrada enquanto os botões são tocados. O texto é
+inserido no cursor com `ACTION_SET_TEXT`, com colagem da área de transferência
+como alternativa para campos que a recusam.
+
+> Instalando por APK em vez da Play Store? O Android bloqueia o botão de
+> acessibilidade até liberá-lo em
+> Configurações → Apps → Speech → ⋮ → **Permitir configurações restritas**.
 
 ### Demo de controle do pipeline completo
 

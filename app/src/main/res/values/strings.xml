@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Speech</string>
+    <string name="dictation_a11y_description">Lets the floating voice button type dictated text into the text field you are focused on. Nothing is read or recorded from the screen.</string>
 </resources>

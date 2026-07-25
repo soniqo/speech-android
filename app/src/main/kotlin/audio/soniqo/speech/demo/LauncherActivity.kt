@@ -8,6 +8,7 @@ import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import audio.soniqo.speech.demo.overlay.VoiceOverlayActivity
 
 /**
  * Mode picker — choose between Echo pipeline and Dictation mode.
@@ -43,6 +44,10 @@ class LauncherActivity : ComponentActivity() {
 
         root.addView(modeButton("Dictation", "Real-time speech-to-text") {
             startActivity(Intent(this, DictationActivity::class.java))
+        })
+
+        root.addView(modeButton("Voice overlay", "Floating mic button over other apps") {
+            startActivity(Intent(this, VoiceOverlayActivity::class.java))
         })
 
         root.addView(modeButton("Recognizer test", "Exercises android.speech.SpeechRecognizer") {

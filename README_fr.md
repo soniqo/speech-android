@@ -100,6 +100,7 @@ Le module [`app/`](app/) est une démo minimale d'assistant vocal avec :
 - Visualisation de la forme d'onde VAD en temps réel
 - Mode écho : transcrit la voix et la synthétise en retour (sans LLM)
 - Mode dictée : résultats partiels en streaming
+- Superposition vocale : bouton micro flottant pour dicter dans n'importe quelle app
 - STT Parakeet TDT à 114 langues dans les écrans écho et dictée
 - Écran de test `SpeechRecognizer` — exerce le chemin d'entrée vocale à l'échelle du système
 - Interface de bulles de chat avec affichage de la latence STT/TTS
@@ -107,6 +108,33 @@ Le module [`app/`](app/) est une démo minimale d'assistant vocal avec :
 ```bash
 ./gradlew :app:installDebug
 ```
+
+### Superposition vocale (dicter dans n'importe quelle app)
+
+La **superposition vocale** place un bouton micro déplaçable au-dessus des
+autres apps. Un appui le transforme en **■ arrêter** / **✕ annuler** : arrêter
+écrit la transcription dans le champ de texte qui a le focus, annuler la jette.
+Si aucun champ éditable n'a le focus, le texte part dans le presse-papiers au
+lieu d'être perdu.
+
+Trois autorisations sont nécessaires, chacune avec son propre écran système —
+l'écran de configuration indique celles qui manquent :
+
+| Autorisation | Pourquoi |
+| --- | --- |
+| Micro | capturer l'audio |
+| Affichage par-dessus les autres apps | dessiner le bouton hors de l'app |
+| Service d'accessibilité | écrire dans le champ de texte d'une autre app |
+
+La fenêtre de superposition est délibérément non focalisable, afin que le champ
+cible conserve le focus de saisie pendant l'appui sur les boutons. Le texte est
+inséré au curseur via `ACTION_SET_TEXT`, avec un collage depuis le
+presse-papiers en secours pour les champs qui le refusent.
+
+> Installation depuis un APK plutôt que le Play Store ? Android bloque le
+> commutateur d'accessibilité tant qu'il n'est pas autorisé dans
+> Paramètres → Applications → Speech → ⋮ → **Autoriser les paramètres
+> restreints**.
 
 ### Démo de contrôle du pipeline complet
 

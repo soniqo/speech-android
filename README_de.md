@@ -100,6 +100,7 @@ Das Modul [`app/`](app/) ist eine minimale Sprachassistenten-Demo mit:
 - Echtzeit-VAD-Wellenformvisualisierung
 - Echo-Modus: transkribiert Sprache und synthetisiert sie zurück (kein LLM)
 - Diktiermodus: Streaming-Teilergebnisse
+- Sprach-Overlay: schwebende Mikrofon-Schaltfläche zum Diktieren in jede App
 - Parakeet TDT STT mit 114 Sprachen in Echo- und Diktieransicht
 - `SpeechRecognizer`-Testbildschirm — übt den systemweiten Spracheingabepfad aus
 - Chat-Bubble-UI mit STT/TTS-Latenzanzeige
@@ -107,6 +108,33 @@ Das Modul [`app/`](app/) ist eine minimale Sprachassistenten-Demo mit:
 ```bash
 ./gradlew :app:installDebug
 ```
+
+### Sprach-Overlay (in jede App diktieren)
+
+Das **Sprach-Overlay** legt eine verschiebbare Mikrofon-Schaltfläche über
+andere Apps. Ein Tippen verwandelt sie in **■ Stopp** / **✕ Abbrechen**: Stopp
+schreibt den Text in das gerade fokussierte Textfeld, Abbrechen verwirft ihn.
+Ist kein bearbeitbares Feld fokussiert, landet der Text in der Zwischenablage,
+statt verloren zu gehen.
+
+Drei Berechtigungen sind nötig, jede mit eigenem Systembildschirm — der
+Einrichtungsbildschirm zeigt, welche noch fehlen:
+
+| Berechtigung | Wozu |
+| --- | --- |
+| Mikrofon | Audio aufnehmen |
+| Über anderen Apps anzeigen | Schaltfläche außerhalb der App zeichnen |
+| Bedienungshilfe | in das Textfeld einer anderen App schreiben |
+
+Das Overlay-Fenster ist bewusst nicht fokussierbar, damit das Zielfeld beim
+Tippen auf die Schaltflächen den Eingabefokus behält. Der Text wird per
+`ACTION_SET_TEXT` an der Cursorposition eingefügt; für Felder, die das
+ablehnen, dient das Einfügen aus der Zwischenablage als Rückfallebene.
+
+> Installation per APK statt über den Play Store? Android sperrt den
+> Bedienungshilfe-Schalter, bis er unter
+> Einstellungen → Apps → Speech → ⋮ → **Eingeschränkte Einstellungen zulassen**
+> freigegeben wird.
 
 ### Vollständige Control-Pipeline-Demo
 

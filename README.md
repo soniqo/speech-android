@@ -157,6 +157,7 @@ The [`app/`](app/) module is a minimal voice assistant demo with:
 - Real-time VAD waveform visualization
 - Echo mode: transcribes speech and synthesizes it back (no LLM)
 - Dictation mode: streaming partial results
+- Voice overlay: a floating mic button that dictates into any app
 - 114-language Parakeet TDT STT in the echo and dictation screens
 - `SpeechRecognizer` test screen — exercises the system-wide voice input path
 - Chat bubble UI with STT/TTS latency display
@@ -164,6 +165,30 @@ The [`app/`](app/) module is a minimal voice assistant demo with:
 ```bash
 ./gradlew :app:installDebug
 ```
+
+### Voice overlay (dictate into any app)
+
+**Voice overlay** puts a draggable mic button on top of other apps. Tap it and
+it becomes **■ stop** / **✕ cancel**: stop types the transcript into whatever
+text field currently has focus, cancel discards it. If no editable field is
+focused, the text goes to the clipboard rather than being lost.
+
+Three grants are needed, each with its own system screen — the setup screen
+shows which are still missing:
+
+| Permission | Why |
+| --- | --- |
+| Microphone | capture audio |
+| Display over other apps | draw the button outside the app |
+| Accessibility service | type into another app's text field |
+
+The overlay window is deliberately non-focusable so the target field keeps
+input focus while the buttons are tapped. Text is inserted at the cursor with
+`ACTION_SET_TEXT`, falling back to clipboard paste for fields that reject it.
+
+> Installing from an APK rather than the Play Store? Android blocks the
+> accessibility toggle until you allow it under
+> Settings → Apps → Speech → ⋮ → **Allow restricted settings**.
 
 ### Full-pipeline control demo
 
