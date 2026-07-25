@@ -708,7 +708,20 @@ object ModelManager {
                 // remaining range, so add what's already on disk. 0 means the
                 // server didn't advertise a length (progress stays file-count
                 // based for this file).
+                // Content-Range carries the authoritative total on a 206 and
+                // is present even when Content-Length is not, so it is the
+                // better source when resuming.
+                val rangeTotal = if (isResume) {
+                    response.header("Content-Range")
+                        ?.substringAfter('/', "")
+                        ?.trim()
+                        ?.toLongOrNull()
+                        ?: 0L
+                } else {
+                    0L
+                }
                 val fileTotal = when {
+                    rangeTotal > 0 -> rangeTotal
                     contentLength <= 0 -> 0L
                     isResume -> existingBytes + contentLength
                     else -> contentLength
@@ -737,10 +750,14 @@ object ModelManager {
 
                 response.close()
 
-                // Validate downloaded size if Content-Length was provided
-                if (!isResume && contentLength > 0 && tmp.length() != contentLength) {
+                // Validate the finished size whenever the server told us what
+                // to expect. This used to skip the resume path entirely, so a
+                // resumed transfer that ended short was renamed into place as
+                // if complete — producing a file that passes the header check
+                // and then fails to parse at load time.
+                if (fileTotal > 0 && tmp.length() != fileTotal) {
                     throw IOException(
-                        "Incomplete download: got ${tmp.length()} bytes, expected $contentLength"
+                        "Incomplete download: got ${tmp.length()} bytes, expected $fileTotal"
                     )
                 }
 

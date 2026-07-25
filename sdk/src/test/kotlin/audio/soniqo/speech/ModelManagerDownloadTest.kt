@@ -8,6 +8,8 @@ import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -152,6 +154,46 @@ class ModelManagerDownloadTest {
         // On a 206 the response length is only the remaining range; the
         // reported file total must include the bytes already on disk.
         assertEquals(16L to 16L, totals.last())
+    }
+
+    @Test
+    fun `resumed download that ends short is rejected`() {
+        // The quiet case: the server returns fewer bytes than the requested
+        // range and closes cleanly, so the transfer itself looks successful. A
+        // truncated model keeps genuine leading bytes, so the header check
+        // passes too and it is cached as valid — the failure only surfaces
+        // later, when the runtime cannot parse it.
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setBody("EFGH")  // 4 bytes, but the range promises 12
+                .setHeader("Content-Range", "bytes 4-15/16")
+        )
+
+        val dest = File(tmpDir.root, "model.onnx")
+        File(tmpDir.root, "model.onnx.tmp").writeText("ABCD")
+
+        // One attempt: a retry would resume again and append more, which is
+        // the right behaviour but not what this test is pinning down.
+        val error = assertThrows(IOException::class.java) { download(dest, maxRetries = 1) }
+        assert(error.message!!.contains("Incomplete download")) { error.message!! }
+        assertFalse("a short resume must not be published", dest.exists())
+    }
+
+    @Test
+    fun `complete resume is still accepted`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setBody("EFGHIJKLMNOP")
+                .setHeader("Content-Range", "bytes 4-15/16")
+        )
+
+        val dest = File(tmpDir.root, "model.onnx")
+        File(tmpDir.root, "model.onnx.tmp").writeText("ABCD")
+        download(dest)
+
+        assertEquals("ABCDEFGHIJKLMNOP", dest.readText())
     }
 
     @Test
