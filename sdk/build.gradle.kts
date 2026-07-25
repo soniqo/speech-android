@@ -12,6 +12,8 @@ val speechCoreDir = providers.gradleProperty("SPEECH_CORE_DIR")
 android {
     namespace = "audio.soniqo.speech"
     compileSdk = 35
+    // NDK r28+ defaults to 16 KB ELF alignment; pin r29 for reproducible AARs.
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         minSdk = 26
