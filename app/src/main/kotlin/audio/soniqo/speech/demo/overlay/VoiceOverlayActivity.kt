@@ -118,10 +118,8 @@ class VoiceOverlayActivity : ComponentActivity() {
         }
 
         testField = EditText(this).apply {
-            setHint("Dictate here…")
             textSize = 16f
             setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#555555"))
             setBackgroundColor(Color.parseColor("#1E1E1E"))
             setPadding(32, 32, 32, 32)
             minLines = 3
