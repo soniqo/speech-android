@@ -2,9 +2,11 @@ package audio.soniqo.speech.demo.overlay
 
 import android.accessibilityservice.AccessibilityService
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
+import android.os.PersistableBundle
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -50,13 +52,15 @@ class DictationAccessibilityService : AccessibilityService() {
         }
         return try {
             recordNode(node)
-            // Paste first. ACTION_PASTE lets the app insert at its own cursor,
-            // so it never has to be told what the field already contains —
-            // which is the whole placeholder problem. ACTION_SET_TEXT has to
-            // rebuild the full value, and any app whose empty field reports a
-            // placeholder as its text (Telegram's composer) gets that
-            // placeholder baked into the result.
-            if (paste(node, text) || setText(node, text)) {
+            // Paste is only needed when the field's real contents are in
+            // doubt. Every clipboard write raises the system's "copied" chip,
+            // so a field we can read confidently is written directly instead.
+            val inserted = if (contentsAreKnown(node)) {
+                setText(node, text) || paste(node, text)
+            } else {
+                paste(node, text) || setText(node, text)
+            }
+            if (inserted) {
                 InsertResult.INSERTED
             } else {
                 Log.w(TAG, "Focused field rejected both PASTE and SET_TEXT")
@@ -65,6 +69,25 @@ class DictationAccessibilityService : AccessibilityService() {
         } finally {
             node.recycle()
         }
+    }
+
+    /**
+     * True when the node's text can be trusted as its real contents.
+     *
+     * An empty field reporting a placeholder is the dangerous case: rebuilding
+     * the value with [AccessibilityNodeInfo.ACTION_SET_TEXT] would bake the
+     * placeholder in. Any signal that the field is genuinely empty — no text
+     * at all, or a declared hint — makes it safe, as does text that no
+     * placeholder signal contradicts.
+     */
+    private fun contentsAreKnown(node: AccessibilityNodeInfo): Boolean {
+        val text = node.text?.toString()
+        if (text.isNullOrEmpty()) return true
+        if (node.isShowingHintText) return true
+        if (text == node.hintText?.toString()) return true
+        // Text with no hint of any kind: could be real content, or a
+        // placeholder an app exposes no other way. Not safe to assume.
+        return false
     }
 
     private fun focusedEditable(): AccessibilityNodeInfo? {
@@ -173,7 +196,16 @@ class DictationAccessibilityService : AccessibilityService() {
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
         val previous = try { cm.primaryClip } catch (_: Exception) { null }
 
-        cm.setPrimaryClip(ClipData.newPlainText("Dictation", text))
+        val clip = ClipData.newPlainText("Dictation", text).apply {
+            // Android 13+ previews clipboard content in the chip; dictation
+            // can be as private as anything else typed.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                description.extras = PersistableBundle().apply {
+                    putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                }
+            }
+        }
+        cm.setPrimaryClip(clip)
         val pasted = node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
 
         // The dictation must not linger on the clipboard once pasted — it can
