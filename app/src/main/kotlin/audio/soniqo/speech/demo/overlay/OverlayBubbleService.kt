@@ -80,8 +80,12 @@ class OverlayBubbleService : Service() {
     private lateinit var busyBubble: FrameLayout
     private var snapAnimator: ValueAnimator? = null
 
-    /** Which edge the bubble is pinned to; the anchor that survives resizing. */
-    private var dockedRight = false
+    /**
+     * Which edge the bubble is pinned to; the anchor that survives resizing.
+     * Right by default — it sits under the thumb for most right-handed use,
+     * and away from the back gesture on the left edge.
+     */
+    private var dockedRight = true
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -224,7 +228,9 @@ class OverlayBubbleService : Service() {
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 0
+            // Start at the right edge rather than sliding there on first
+            // layout; applyDock corrects the exact offset once measured.
+            x = screenBounds().first - dp(56)
             y = dp(240)
         }
 
