@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.RandomAccessFile
 import java.nio.file.Files
 
 /**
@@ -224,6 +225,80 @@ class ModelManagerManifestTest {
     }
 
     @Test
+    fun `Nemotron LiteRT manifests are pinned to CPU-compatible revisions`() {
+        val int8Files = modelFiles(
+            precision = ModelPrecision.INT8,
+            sttModel = SttModel.NEMOTRON_MULTILINGUAL,
+            sttBackend = SttBackend.LITERT,
+        ).filter { it.repo.endsWith("-LiteRT-INT8") }
+        val fp16Files = modelFiles(
+            precision = ModelPrecision.FP32,
+            sttModel = SttModel.NEMOTRON_MULTILINGUAL,
+            sttBackend = SttBackend.LITERT,
+        ).filter { it.repo.endsWith("-LiteRT-FP16") }
+
+        assertTrue(int8Files.isNotEmpty())
+        assertTrue(int8Files.all { it.revision == "v1.0.0" })
+        assertTrue(fp16Files.isNotEmpty())
+        assertTrue(
+            fp16Files.all {
+                it.revision == "1503a9a1eb75b813b83ba65bf5e9fecea4a46091"
+            },
+        )
+    }
+
+    @Test
+    fun `Nemotron LiteRT revision invalidates only its model cache`() {
+        val defaultKey = modelSetKey()
+        val nemotronInt8Key = modelSetKey(
+            sttModel = SttModel.NEMOTRON_MULTILINGUAL,
+            sttBackend = SttBackend.LITERT,
+        )
+        val nemotronFp16Key = modelSetKey(
+            precision = ModelPrecision.FP32,
+            sttModel = SttModel.NEMOTRON_MULTILINGUAL,
+            sttBackend = SttBackend.LITERT,
+        )
+
+        assertFalse(defaultKey.contains("sttRevision="))
+        assertTrue(nemotronInt8Key.endsWith("|sttRevision=v1.0.0"))
+        assertTrue(
+            nemotronFp16Key.endsWith(
+                "|sttRevision=1503a9a1eb75b813b83ba65bf5e9fecea4a46091",
+            ),
+        )
+        assertNotEquals(nemotronInt8Key, nemotronFp16Key)
+    }
+
+    @Test
+    fun `Nemotron LiteRT artifacts reject truncated model files`() {
+        val dir = Files.createTempDirectory("nemotron-litert-validation").toFile()
+        try {
+            val encoder = dir.resolve("encoder.tflite").apply {
+                RandomAccessFile(this, "rw").use { it.setLength(599_999_999L) }
+            }
+            val decoder = dir.resolve("decoder.tflite").apply {
+                RandomAccessFile(this, "rw").use { it.setLength(49_999_999L) }
+            }
+            val joint = dir.resolve("joint.tflite").apply {
+                RandomAccessFile(this, "rw").use { it.setLength(29_999_999L) }
+            }
+
+            assertFalse(
+                ModelManager.isValidModel(encoder, "nemotron-multilingual-encoder.tflite"),
+            )
+            assertFalse(
+                ModelManager.isValidModel(decoder, "nemotron-multilingual-decoder.tflite"),
+            )
+            assertFalse(
+                ModelManager.isValidModel(joint, "nemotron-multilingual-joint.tflite"),
+            )
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `llm manifest keeps standalone FunctionGemma as default`() {
         assertEquals(
             listOf(ModelManager.ModelFile("FunctionGemma-270M-LiteRT-LM", "model.litertlm")),
@@ -258,15 +333,19 @@ class ModelManagerManifestTest {
     }
 
     private fun modelFiles(
+        precision: ModelPrecision = ModelPrecision.INT8,
         sttModel: SttModel = SttModel.PARAKEET_EOU,
+        sttBackend: SttBackend = SttBackend.ONNX,
         ttsModel: TtsModel = TtsModel.KOKORO,
     ): List<ModelManager.ModelFile> =
-        ModelManager.models(ModelPrecision.INT8, sttModel, SttBackend.ONNX, ttsModel)
+        ModelManager.models(precision, sttModel, sttBackend, ttsModel)
 
     private fun modelSetKey(
+        precision: ModelPrecision = ModelPrecision.INT8,
         sttModel: SttModel = SttModel.PARAKEET_EOU,
+        sttBackend: SttBackend = SttBackend.ONNX,
         ttsModel: TtsModel = TtsModel.KOKORO,
-    ): String = ModelManager.modelSetKey(ModelPrecision.INT8, sttModel, SttBackend.ONNX, ttsModel)
+    ): String = ModelManager.modelSetKey(precision, sttModel, sttBackend, ttsModel)
 
     private fun modelDirName(
         sttModel: SttModel = SttModel.PARAKEET_EOU,

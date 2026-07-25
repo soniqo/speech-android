@@ -23,6 +23,9 @@ object ModelManager {
     private const val BASE_URL = "https://huggingface.co/soniqo"
     private const val POCKET_TTS_REVISION = "v1.0.0"
     private const val POCKET_TTS_DIR = "pocket_tts"
+    private const val NEMOTRON_LITERT_INT8_REVISION = "v1.0.0"
+    private const val NEMOTRON_LITERT_FP16_REVISION =
+        "1503a9a1eb75b813b83ba65bf5e9fecea4a46091"
 
     // Bump when models on HuggingFace are updated to trigger cache invalidation.
     // v6: default STT switched to Parakeet-EOU-120M-ONNX-INT8, the low-memory
@@ -90,19 +93,20 @@ object ModelManager {
                     // an implementation for ConvInteger"), so the ONNX backend on
                     // Android always uses FP16 (verified on-device). For an int8
                     // footprint on Android use the LiteRT backend (channelwise int8
-                    // via the NNAPI/XNNPACK delegate).
+                    // weights with FP32 activations/compute on the CPU runtime).
                     SttBackend.ONNX -> listOf("encoder.onnx", "encoder.onnx.data",
                         "decoder.onnx", "decoder.onnx.data", "joint.onnx", "joint.onnx.data",
                         "vocab.json", "languages.json", "config.json")
                         .map { ModelFile("$base-ONNX-FP16", it) }
                     SttBackend.LITERT -> {
-                      val q = if (precision == ModelPrecision.INT8) "INT8" else "FP16"
-                      listOf(
-                        "nemotron-multilingual-encoder.tflite",
-                        "nemotron-multilingual-decoder.tflite",
-                        "nemotron-multilingual-joint.tflite",
-                        "vocab.json", "languages.json", "io_map.json", "config.json")
-                        .map { ModelFile("$base-LiteRT-$q", it) }
+                        val q = if (precision == ModelPrecision.INT8) "INT8" else "FP16"
+                        val revision = nemotronLiteRtRevision(precision)
+                        listOf(
+                            "nemotron-multilingual-encoder.tflite",
+                            "nemotron-multilingual-decoder.tflite",
+                            "nemotron-multilingual-joint.tflite",
+                            "vocab.json", "languages.json", "io_map.json", "config.json",
+                        ).map { ModelFile("$base-LiteRT-$q", it, revision) }
                     }
                 }
             }
@@ -485,13 +489,23 @@ object ModelManager {
         sttModel: SttModel,
         sttBackend: SttBackend,
         ttsModel: TtsModel,
-    ): String = listOf(
-        "v$MODEL_VERSION",
-        "precision=${precision.name}",
-        "stt=${sttModel.name}",
-        "backend=${sttBackend.name}",
-        "tts=${ttsCacheName(ttsModel)}",
-    ).joinToString("|")
+    ): String = buildList {
+        add("v$MODEL_VERSION")
+        add("precision=${precision.name}")
+        add("stt=${sttModel.name}")
+        add("backend=${sttBackend.name}")
+        add("tts=${ttsCacheName(ttsModel)}")
+        if (sttModel == SttModel.NEMOTRON_MULTILINGUAL && sttBackend == SttBackend.LITERT) {
+            add("sttRevision=${nemotronLiteRtRevision(precision)}")
+        }
+    }.joinToString("|")
+
+    private fun nemotronLiteRtRevision(precision: ModelPrecision): String =
+        if (precision == ModelPrecision.INT8) {
+            NEMOTRON_LITERT_INT8_REVISION
+        } else {
+            NEMOTRON_LITERT_FP16_REVISION
+        }
 
     private fun modelDirFile(
         context: Context,
@@ -687,6 +701,9 @@ object ModelManager {
         "model.litertlm" to 200_000_000L,                // ~283 MB FunctionGemma bundle
         "model-lora16-android.litertlm" to 300_000_000L, // ~327 MB LoRA-capable base
         "control-r4-rank16.tflite" to 9_000_000L,        // ~9.5 MB Control adapter
+        "nemotron-multilingual-encoder.tflite" to 600_000_000L, // ~623 MB INT8
+        "nemotron-multilingual-decoder.tflite" to 50_000_000L,  // ~60 MB
+        "nemotron-multilingual-joint.tflite" to 30_000_000L,    // ~38 MB
     )
 
     @VisibleForTesting
