@@ -39,6 +39,7 @@ import androidx.core.content.ContextCompat
 import audio.soniqo.speech.ModelManager
 import audio.soniqo.speech.ModelPrecision
 import audio.soniqo.speech.PipelineMode
+import audio.soniqo.speech.PipelineState
 import audio.soniqo.speech.SpeechConfig
 import audio.soniqo.speech.SpeechEvent
 import audio.soniqo.speech.SpeechPipeline
@@ -104,6 +105,9 @@ class OverlayBubbleService : Service() {
 
     /** When the engine last emitted anything; drives [drainEngine]. */
     @Volatile private var lastEngineEventAt = 0L
+
+    /** When the current dictation started; scales the finalize wait. */
+    @Volatile private var recordingStartedAt = 0L
 
     private var state = UiState.LOADING
     private val transcript = StringBuilder()
@@ -570,15 +574,46 @@ class OverlayBubbleService : Service() {
      */
     private suspend fun awaitFinalTranscription() {
         val flushedAt = System.currentTimeMillis()
-        val deadline = flushedAt + FINALIZE_TIMEOUT_MS
+        val timeout = finalizeTimeoutMs()
+        val deadline = flushedAt + timeout
         while (System.currentTimeMillis() < deadline) {
             val now = System.currentTimeMillis()
             val settled = now - flushedAt >= FINALIZE_SETTLE_MS
             val quiet = now - lastEngineEventAt >= FINALIZE_QUIET_MS
-            if (settled && quiet && !speechActive && partialText.isEmpty()) return
+            if (settled && quiet && !engineBusy()) return
             delay(50)
         }
-        Log.w(TAG, "Final transcription did not settle within ${FINALIZE_TIMEOUT_MS}ms")
+        Log.w(TAG, "Final transcription did not settle within ${timeout}ms")
+    }
+
+    /**
+     * True while the engine still owes us a result.
+     *
+     * Silence alone cannot tell "finished" from "busy": transcribing a long
+     * segment emits nothing for its whole duration, so a wait keyed only on
+     * quiet gives up mid-decode and the result is then dropped as belonging to
+     * a closed session. The pipeline's own state is the authority.
+     */
+    private fun engineBusy(): Boolean {
+        if (speechActive || partialText.isNotEmpty()) return true
+        return try {
+            pipeline?.state == PipelineState.Transcribing
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not read pipeline state", e)
+            false
+        }
+    }
+
+    /**
+     * Longer dictations need longer to decode, and speech-core force-splits
+     * anything past 15 s into multiple utterances that queue up behind each
+     * other — so a fixed cap truncates exactly the long dictations it should
+     * protect.
+     */
+    private fun finalizeTimeoutMs(): Long {
+        val recordedMs = System.currentTimeMillis() - recordingStartedAt
+        val scaled = FINALIZE_TIMEOUT_MS + recordedMs / FINALIZE_SCALE_DIVISOR
+        return scaled.coerceAtMost(FINALIZE_TIMEOUT_CAP_MS)
     }
 
     /**
@@ -590,7 +625,8 @@ class OverlayBubbleService : Service() {
     private suspend fun drainEngine() {
         val cap = System.currentTimeMillis() + DRAIN_CAP_MS
         while (System.currentTimeMillis() < cap) {
-            if (System.currentTimeMillis() - lastEngineEventAt > DRAIN_QUIET_MS) return
+            val quiet = System.currentTimeMillis() - lastEngineEventAt > DRAIN_QUIET_MS
+            if (quiet && !engineBusy()) return
             delay(50)
         }
         Log.w(TAG, "Engine still emitting after ${DRAIN_CAP_MS}ms; giving up on drain")
@@ -642,6 +678,7 @@ class OverlayBubbleService : Service() {
         partialText = ""
         speechActive = false
         sessionActive = true
+        recordingStartedAt = System.currentTimeMillis()
         record.startRecording()
         recording = true
         setState(UiState.RECORDING)
@@ -812,6 +849,9 @@ class OverlayBubbleService : Service() {
         private const val CHANNEL_ID = "dictation_overlay"
         private const val NOTIFICATION_ID = 4711
         private const val FINALIZE_TIMEOUT_MS = 4000L
+        /** Extra finalize budget: 1 s per 5 s recorded. */
+        private const val FINALIZE_SCALE_DIVISOR = 5L
+        private const val FINALIZE_TIMEOUT_CAP_MS = 30000L
         /** Minimum wait after the flush before concluding nothing was heard. */
         private const val FINALIZE_SETTLE_MS = 700L
         /** Engine must be silent this long for the utterance to count as done. */
