@@ -239,15 +239,21 @@ class OverlayBubbleService : Service() {
         render()
     }
 
+    /**
+     * Colour carried by the glyph, not the disc. A solid green and red circle
+     * shouted over whatever app is underneath; this matches the idle bubble —
+     * dark circle, coloured mark — so the overlay stays quiet while still
+     * reading as stop and cancel at a glance.
+     */
     private fun iconButton(glyph: String, color: String, onClick: () -> Unit) =
         TextView(this).apply {
             text = glyph
-            textSize = 18f
-            setTextColor(Color.WHITE)
+            textSize = 20f
+            setTextColor(Color.parseColor(color))
             gravity = Gravity.CENTER
             // Font padding skews vertical centering of a lone glyph.
             includeFontPadding = false
-            background = circle(Color.parseColor(color))
+            background = circle(Color.parseColor(BUBBLE_BG))
             layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply {
                 marginStart = dp(8)
             }
