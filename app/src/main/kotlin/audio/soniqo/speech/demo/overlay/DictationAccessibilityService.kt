@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -175,14 +176,26 @@ class DictationAccessibilityService : AccessibilityService() {
         cm.setPrimaryClip(ClipData.newPlainText("Dictation", text))
         val pasted = node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
 
-        // Restore after the paste has been consumed; doing it synchronously
-        // races the target app reading the clip.
-        if (previous != null) {
-            Handler(Looper.getMainLooper()).postDelayed({
-                try { cm.setPrimaryClip(previous) } catch (_: Exception) {}
-            }, CLIPBOARD_RESTORE_DELAY_MS)
-        }
+        // The dictation must not linger on the clipboard once pasted — it can
+        // be as sensitive as anything else typed. Restore what the user had if
+        // there was something, otherwise clear it outright. Delayed because
+        // doing this synchronously races the target app reading the clip.
+        Handler(Looper.getMainLooper()).postDelayed({
+            try {
+                if (previous != null) cm.setPrimaryClip(previous) else clearClipboard(cm)
+            } catch (_: Exception) {
+            }
+        }, CLIPBOARD_RESTORE_DELAY_MS)
         return pasted
+    }
+
+    private fun clearClipboard(cm: ClipboardManager) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            cm.clearPrimaryClip()
+        } else {
+            // No clear() before API 28 — an empty clip is the closest thing.
+            cm.setPrimaryClip(ClipData.newPlainText("", ""))
+        }
     }
 
     /** Outcome of an insert attempt — each case needs a different fallback. */
