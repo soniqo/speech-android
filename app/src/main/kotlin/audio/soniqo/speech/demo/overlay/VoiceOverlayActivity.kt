@@ -10,8 +10,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.InputType
 import android.view.Gravity
+import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.core.app.ActivityCompat
@@ -31,6 +34,7 @@ class VoiceOverlayActivity : ComponentActivity() {
     private lateinit var overlayRow: TextView
     private lateinit var a11yRow: TextView
     private lateinit var toggleButton: TextView
+    private lateinit var testField: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,8 +81,62 @@ class VoiceOverlayActivity : ComponentActivity() {
             setOnClickListener { toggleOverlay() }
         }
         root.addView(toggleButton)
+        root.addView(testSection())
 
-        setContentView(root)
+        // The scratch field raises the keyboard, so the screen has to scroll.
+        setContentView(
+            ScrollView(this).apply {
+                setBackgroundColor(Color.parseColor("#0F0F0F"))
+                isFillViewport = true
+                addView(root)
+            }
+        )
+    }
+
+    /**
+     * A scratch text field for trying the overlay without leaving the app.
+     *
+     * It is an ordinary EditText on purpose: dictating into it exercises the
+     * same focused-field path as any third-party app, so if it works here the
+     * accessibility service and the non-focusable overlay window are both
+     * behaving.
+     */
+    private fun testSection(): LinearLayout {
+        val heading = TextView(this).apply {
+            text = "Try it"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            setPadding(0, 56, 0, 4)
+        }
+
+        val hintView = TextView(this).apply {
+            text = "Tap this box, then tap the bubble and speak. " +
+                "Stop types the text in; Cancel discards it."
+            textSize = 13f
+            setTextColor(Color.parseColor("#888888"))
+            setPadding(0, 0, 0, 12)
+        }
+
+        testField = EditText(this).apply {
+            setHint("Dictate here…")
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#555555"))
+            setBackgroundColor(Color.parseColor("#1E1E1E"))
+            setPadding(32, 32, 32, 32)
+            minLines = 3
+            gravity = Gravity.TOP or Gravity.START
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        }
+
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(heading)
+            addView(hintView)
+            addView(testField)
+        }
     }
 
     override fun onResume() {
@@ -170,8 +228,10 @@ class VoiceOverlayActivity : ComponentActivity() {
             OverlayBubbleService.stop(this)
         } else {
             OverlayBubbleService.start(this)
-            // Get out of the way so the user can dictate into another app.
-            moveTaskToBack(true)
+            // Deliberately stay in the foreground: the scratch field below is
+            // the quickest way to confirm the overlay works before trusting it
+            // in a real app. Home dismisses this screen when they're ready.
+            testField.requestFocus()
         }
         toggleButton.postDelayed({ refresh() }, 300)
     }
