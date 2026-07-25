@@ -107,7 +107,10 @@ class ModelManagerPlanningTest {
         writeValid(modelDir, "us_gold.json", 3_000_469)
         writeValid(modelDir, "us_silver.json", 3_099_517)
         listOf("fr", "es", "it", "pt", "hi").forEach { writeValid(modelDir, "dict_$it.json", 5_000) }
-        writeValid(modelDir, "voices/af_heart.bin", 1_024)
+        listOf(
+            "af_heart", "ff_siwis", "ef_dora", "if_sara",
+            "pf_dora", "hf_alpha", "jf_alpha", "zf_xiaobei",
+        ).forEach { writeValid(modelDir, "voices/$it.bin", 1_024) }
         writeValid(modelDir, "deepfilter-auxiliary.bin", 126_976)
         writeCurrentMarkers(modelDir)
 
