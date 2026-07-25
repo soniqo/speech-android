@@ -104,7 +104,23 @@ class DictationAccessibilityService : AccessibilityService() {
             text = node.text?.toString(),
             hint = node.hintText?.toString(),
             showingHint = node.isShowingHintText,
+            contentDescription = node.contentDescription?.toString(),
+            selStart = node.textSelectionStart,
+            selEnd = node.textSelectionEnd,
         )
+
+        // Placeholder handling has to be guessed per app, so record what the
+        // node actually reported — the setup screen surfaces it.
+        lastNodeReport = buildString {
+            appendLine("class: ${node.className}")
+            appendLine("pkg: ${node.packageName}")
+            appendLine("text: ${quote(node.text)}")
+            appendLine("hintText: ${quote(node.hintText)}")
+            appendLine("isShowingHintText: ${node.isShowingHintText}")
+            appendLine("contentDescription: ${quote(node.contentDescription)}")
+            appendLine("selection: ${node.textSelectionStart}..${node.textSelectionEnd}")
+            append("treated as existing: ${quote(existing)}")
+        }
         // Selection offsets describe the hint when one is displayed, so they
         // are meaningless once it is treated as empty.
         val hasContent = existing.isNotEmpty()
@@ -134,6 +150,9 @@ class DictationAccessibilityService : AccessibilityService() {
         return true
     }
 
+    private fun quote(value: CharSequence?): String =
+        if (value == null) "null" else "\"$value\""
+
     /** Fallback for fields that reject ACTION_SET_TEXT (some web views). */
     private fun paste(node: AccessibilityNodeInfo, text: String): Boolean {
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
@@ -150,6 +169,11 @@ class DictationAccessibilityService : AccessibilityService() {
 
         @Volatile
         private var instance: DictationAccessibilityService? = null
+
+        /** What the last targeted field reported, for diagnosing placeholders. */
+        @Volatile
+        var lastNodeReport: String? = null
+            private set
 
         val isRunning: Boolean get() = instance != null
 

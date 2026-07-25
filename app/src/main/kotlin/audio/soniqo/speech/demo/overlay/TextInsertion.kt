@@ -22,10 +22,30 @@ object TextInsertion {
      * to the placeholder. [showingHint] is the node's own flag; the [hint]
      * comparison catches apps that populate `hintText` but never set it.
      */
-    fun existingText(text: String?, hint: String?, showingHint: Boolean): String {
+    fun existingText(
+        text: String?,
+        hint: String?,
+        showingHint: Boolean,
+        contentDescription: String? = null,
+        selStart: Int = -1,
+        selEnd: Int = -1,
+    ): String {
         if (showingHint) return ""
         val actual = text.orEmpty()
+        if (actual.isEmpty()) return ""
         if (!hint.isNullOrEmpty() && actual == hint) return ""
+
+        // Custom editors (Telegram's composer among them) can surface the
+        // placeholder as text with no hintText set, describing it only through
+        // contentDescription. An unset caret alongside that match means the
+        // field is empty and we are looking at the placeholder, not content
+        // the user typed.
+        if (!contentDescription.isNullOrEmpty() &&
+            actual == contentDescription &&
+            selStart <= 0 && selEnd <= 0
+        ) {
+            return ""
+        }
         return actual
     }
 
