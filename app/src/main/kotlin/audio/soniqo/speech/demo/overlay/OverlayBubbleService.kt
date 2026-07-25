@@ -547,6 +547,29 @@ class OverlayBubbleService : Service() {
     }
 
     /**
+     * Wait for the utterance to actually finish transcribing after the flush.
+     *
+     * Watching `speechActive`/`partialText` alone is not enough: both are false
+     * in the window between SpeechEnded and TranscriptionCompleted, so a wait
+     * keyed on them returns *before* the result exists and commits nothing.
+     * Short phrases that never emit a partial land in the same hole. Waiting
+     * for the engine to fall quiet covers both, since every event it emits
+     * pushes the quiet window back.
+     */
+    private suspend fun awaitFinalTranscription() {
+        val flushedAt = System.currentTimeMillis()
+        val deadline = flushedAt + FINALIZE_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            val now = System.currentTimeMillis()
+            val settled = now - flushedAt >= FINALIZE_SETTLE_MS
+            val quiet = now - lastEngineEventAt >= FINALIZE_QUIET_MS
+            if (settled && quiet && !speechActive && partialText.isEmpty()) return
+            delay(50)
+        }
+        Log.w(TAG, "Final transcription did not settle within ${FINALIZE_TIMEOUT_MS}ms")
+    }
+
+    /**
      * Wait until the engine stops emitting. speech-core never clears its
      * pending-utterance queue on stop/start, so anything still queued when a
      * new dictation begins would surface inside it. Holding the UI busy until
@@ -649,14 +672,7 @@ class OverlayBubbleService : Service() {
             // tail is transcribed into *this* dictation instead of lingering.
             withContext(Dispatchers.Default) { pushSilence() }
 
-            // Give the STT a moment to turn the live partial into a final
-            // transcription rather than committing the rougher partial text.
-            val deadline = System.currentTimeMillis() + FINALIZE_TIMEOUT_MS
-            while (System.currentTimeMillis() < deadline &&
-                (speechActive || partialText.isNotEmpty())
-            ) {
-                delay(50)
-            }
+            awaitFinalTranscription()
 
             val text = dictatedText()
             // Close the session before the insert, not after: everything the
@@ -783,7 +799,11 @@ class OverlayBubbleService : Service() {
         private const val TAG = "OverlayBubble"
         private const val CHANNEL_ID = "dictation_overlay"
         private const val NOTIFICATION_ID = 4711
-        private const val FINALIZE_TIMEOUT_MS = 3000L
+        private const val FINALIZE_TIMEOUT_MS = 4000L
+        /** Minimum wait after the flush before concluding nothing was heard. */
+        private const val FINALIZE_SETTLE_MS = 700L
+        /** Engine must be silent this long for the utterance to count as done. */
+        private const val FINALIZE_QUIET_MS = 500L
         private const val BUBBLE_BG = "#1E1E1E"
         private const val BORDER = "#8A8A8A"
         private const val ACCENT = "#4FC3F7"
