@@ -5,6 +5,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -46,10 +48,17 @@ class DictationAccessibilityService : AccessibilityService() {
             return InsertResult.NO_FOCUSED_FIELD
         }
         return try {
-            if (setText(node, text) || paste(node, text)) {
+            recordNode(node)
+            // Paste first. ACTION_PASTE lets the app insert at its own cursor,
+            // so it never has to be told what the field already contains —
+            // which is the whole placeholder problem. ACTION_SET_TEXT has to
+            // rebuild the full value, and any app whose empty field reports a
+            // placeholder as its text (Telegram's composer) gets that
+            // placeholder baked into the result.
+            if (paste(node, text) || setText(node, text)) {
                 InsertResult.INSERTED
             } else {
-                Log.w(TAG, "Focused field rejected both SET_TEXT and PASTE")
+                Log.w(TAG, "Focused field rejected both PASTE and SET_TEXT")
                 InsertResult.NO_FOCUSED_FIELD
             }
         } finally {
@@ -108,19 +117,6 @@ class DictationAccessibilityService : AccessibilityService() {
             selStart = node.textSelectionStart,
             selEnd = node.textSelectionEnd,
         )
-
-        // Placeholder handling has to be guessed per app, so record what the
-        // node actually reported — the setup screen surfaces it.
-        lastNodeReport = buildString {
-            appendLine("class: ${node.className}")
-            appendLine("pkg: ${node.packageName}")
-            appendLine("text: ${quote(node.text)}")
-            appendLine("hintText: ${quote(node.hintText)}")
-            appendLine("isShowingHintText: ${node.isShowingHintText}")
-            appendLine("contentDescription: ${quote(node.contentDescription)}")
-            appendLine("selection: ${node.textSelectionStart}..${node.textSelectionEnd}")
-            append("treated as existing: ${quote(existing)}")
-        }
         // Selection offsets describe the hint when one is displayed, so they
         // are meaningless once it is treated as empty.
         val hasContent = existing.isNotEmpty()
@@ -150,14 +146,43 @@ class DictationAccessibilityService : AccessibilityService() {
         return true
     }
 
+    /** Snapshot of the target field, surfaced by the setup screen. */
+    private fun recordNode(node: AccessibilityNodeInfo) {
+        lastNodeReport = buildString {
+            appendLine("class: ${node.className}")
+            appendLine("pkg: ${node.packageName}")
+            appendLine("text: ${quote(node.text)}")
+            appendLine("hintText: ${quote(node.hintText)}")
+            appendLine("isShowingHintText: ${node.isShowingHintText}")
+            appendLine("contentDescription: ${quote(node.contentDescription)}")
+            append("selection: ${node.textSelectionStart}..${node.textSelectionEnd}")
+        }
+    }
+
     private fun quote(value: CharSequence?): String =
         if (value == null) "null" else "\"$value\""
 
-    /** Fallback for fields that reject ACTION_SET_TEXT (some web views). */
+    /**
+     * Insert via the clipboard, restoring whatever the user had afterwards.
+     *
+     * The app decides where the text lands, so an empty field stays empty
+     * underneath and no placeholder can leak into the result.
+     */
     private fun paste(node: AccessibilityNodeInfo, text: String): Boolean {
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
+        val previous = try { cm.primaryClip } catch (_: Exception) { null }
+
         cm.setPrimaryClip(ClipData.newPlainText("Dictation", text))
-        return node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+        val pasted = node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+
+        // Restore after the paste has been consumed; doing it synchronously
+        // races the target app reading the clip.
+        if (previous != null) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                try { cm.setPrimaryClip(previous) } catch (_: Exception) {}
+            }, CLIPBOARD_RESTORE_DELAY_MS)
+        }
+        return pasted
     }
 
     /** Outcome of an insert attempt — each case needs a different fallback. */
@@ -166,6 +191,7 @@ class DictationAccessibilityService : AccessibilityService() {
     companion object {
         private const val TAG = "DictationA11y"
         private const val MAX_TREE_DEPTH = 40
+        private const val CLIPBOARD_RESTORE_DELAY_MS = 1500L
 
         @Volatile
         private var instance: DictationAccessibilityService? = null
