@@ -8,8 +8,8 @@ import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -216,6 +216,86 @@ class ModelManagerDownloadTest {
         File(tmpDir.root, "model.onnx.tmp").writeText("ABCD")
         download(dest)
 
+        assertEquals("ABCDEFGHIJKLMNOP", dest.readText())
+    }
+
+    @Test
+    fun `206 without Content-Range retries from scratch`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setBody("ABCDEFGHIJKLMNOP")
+        )
+        server.enqueue(MockResponse().setBody("ABCDEFGHIJKLMNOP"))
+
+        val dest = File(tmpDir.root, "model.onnx")
+        File(tmpDir.root, "model.onnx.tmp").writeText("ABCD")
+        download(dest)
+
+        assertEquals("bytes=4-", server.takeRequest().getHeader("Range"))
+        assertNull(server.takeRequest().getHeader("Range"))
+        assertEquals("ABCDEFGHIJKLMNOP", dest.readText())
+    }
+
+    @Test
+    fun `wrong nonzero range offset retries from scratch`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setBody("IJKLMNOP")
+                .setHeader("Content-Range", "bytes 8-15/16")
+        )
+        server.enqueue(MockResponse().setBody("ABCDEFGHIJKLMNOP"))
+
+        val dest = File(tmpDir.root, "model.onnx")
+        File(tmpDir.root, "model.onnx.tmp").writeText("ABCD")
+        download(dest)
+
+        assertEquals("bytes=4-", server.takeRequest().getHeader("Range"))
+        assertNull(server.takeRequest().getHeader("Range"))
+        assertEquals("ABCDEFGHIJKLMNOP", dest.readText())
+    }
+
+    @Test
+    fun `range body longer than declared retries from scratch`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setBody("EFGHIJKLMNOP")
+                .setHeader("Content-Range", "bytes 4-7/16")
+        )
+        server.enqueue(MockResponse().setBody("ABCDEFGHIJKLMNOP"))
+
+        val dest = File(tmpDir.root, "model.onnx")
+        File(tmpDir.root, "model.onnx.tmp").writeText("ABCD")
+        download(dest)
+
+        assertEquals("bytes=4-", server.takeRequest().getHeader("Range"))
+        assertNull(server.takeRequest().getHeader("Range"))
+        assertEquals("ABCDEFGHIJKLMNOP", dest.readText())
+    }
+
+    @Test
+    fun `valid intermediate range resumes from its new offset`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setBody("EFGH")
+                .setHeader("Content-Range", "bytes 4-7/16")
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setBody("IJKLMNOP")
+                .setHeader("Content-Range", "bytes 8-15/16")
+        )
+
+        val dest = File(tmpDir.root, "model.onnx")
+        File(tmpDir.root, "model.onnx.tmp").writeText("ABCD")
+        download(dest)
+
+        assertEquals("bytes=4-", server.takeRequest().getHeader("Range"))
+        assertEquals("bytes=8-", server.takeRequest().getHeader("Range"))
         assertEquals("ABCDEFGHIJKLMNOP", dest.readText())
     }
 
