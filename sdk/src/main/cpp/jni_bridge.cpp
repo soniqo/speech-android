@@ -421,6 +421,14 @@ Java_audio_soniqo_speech_NativeBridge_nativeStop(
 }
 
 JNIEXPORT void JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeCancelTurn(
+    JNIEnv* /*env*/, jobject /*thiz*/, jlong handle)
+{
+    auto* h = reinterpret_cast<PipelineHandle*>(handle);
+    if (h && h->pipeline) h->pipeline->cancel_current_turn();
+}
+
+JNIEXPORT void JNICALL
 Java_audio_soniqo_speech_NativeBridge_nativePushAudio(
     JNIEnv* env, jobject /*thiz*/, jlong handle,
     jfloatArray samples, jint count)

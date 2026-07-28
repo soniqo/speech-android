@@ -52,43 +52,38 @@ class DictationAccessibilityService : AccessibilityService() {
         }
         return try {
             recordNode(node)
-            // Paste is only needed when the field's real contents are in
-            // doubt. Every clipboard write raises the system's "copied" chip,
-            // so a field we can read confidently is written directly instead.
-            val inserted = if (contentsAreKnown(node)) {
-                setText(node, text) || paste(node, text)
+            // Pasting is the last resort, not the default: it costs the user
+            // their clipboard (see [paste]). A field whose contents we can
+            // reconstruct is written directly instead.
+            //
+            // Note the fallbacks are not symmetric, and deliberately so.
+            // SET_TEXT cannot simply lead with PASTE as an on-failure backstop:
+            // against a placeholder it *succeeds* and writes the placeholder
+            // into the field, so there is no failure to catch.
+            if (contentsAreKnown(node)) {
+                if (setText(node, text)) return InsertResult.INSERTED
+                if (paste(node, text)) return InsertResult.INSERTED_VIA_CLIPBOARD
             } else {
-                paste(node, text) || setText(node, text)
+                if (paste(node, text)) return InsertResult.INSERTED_VIA_CLIPBOARD
+                if (setText(node, text)) return InsertResult.INSERTED
             }
-            if (inserted) {
-                InsertResult.INSERTED
-            } else {
-                Log.w(TAG, "Focused field rejected both PASTE and SET_TEXT")
-                InsertResult.NO_FOCUSED_FIELD
-            }
+            Log.w(TAG, "Focused field rejected both PASTE and SET_TEXT")
+            InsertResult.NO_FOCUSED_FIELD
         } finally {
             node.recycle()
         }
     }
 
-    /**
-     * True when the node's text can be trusted as its real contents.
-     *
-     * An empty field reporting a placeholder is the dangerous case: rebuilding
-     * the value with [AccessibilityNodeInfo.ACTION_SET_TEXT] would bake the
-     * placeholder in. Any signal that the field is genuinely empty — no text
-     * at all, or a declared hint — makes it safe, as does text that no
-     * placeholder signal contradicts.
-     */
-    private fun contentsAreKnown(node: AccessibilityNodeInfo): Boolean {
-        val text = node.text?.toString()
-        if (text.isNullOrEmpty()) return true
-        if (node.isShowingHintText) return true
-        if (text == node.hintText?.toString()) return true
-        // Text with no hint of any kind: could be real content, or a
-        // placeholder an app exposes no other way. Not safe to assume.
-        return false
-    }
+    /** [TextInsertion.contentsAreKnown] over the node's reported state. */
+    private fun contentsAreKnown(node: AccessibilityNodeInfo): Boolean =
+        TextInsertion.contentsAreKnown(
+            text = node.text?.toString(),
+            hint = node.hintText?.toString(),
+            showingHint = node.isShowingHintText,
+            contentDescription = node.contentDescription?.toString(),
+            selStart = node.textSelectionStart,
+            selEnd = node.textSelectionEnd,
+        )
 
     private fun focusedEditable(): AccessibilityNodeInfo? {
         findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.let { focus ->
@@ -187,14 +182,25 @@ class DictationAccessibilityService : AccessibilityService() {
         if (value == null) "null" else "\"$value\""
 
     /**
-     * Insert via the clipboard, restoring whatever the user had afterwards.
+     * Insert via the clipboard: the app decides where the text lands, so an
+     * empty field stays empty underneath and no placeholder can leak in.
      *
-     * The app decides where the text lands, so an empty field stays empty
-     * underneath and no placeholder can leak into the result.
+     * **This destroys whatever the user had on the clipboard, unrecoverably.**
+     * An earlier version saved the previous clip and put it back, which never
+     * worked: from API 29 on, [ClipboardManager.getPrimaryClip] returns null to
+     * any app that does not own the focused window, and an accessibility
+     * service never does. So the read always came back null and the restore
+     * always fell through to clearing — the save/restore only ever *looked*
+     * like it protected the clipboard.
+     *
+     * Nothing here can fix that. Writing the clip is what loses the old one,
+     * and it is unavoidable for `ACTION_PASTE`. All that is left to choose is
+     * what to leave behind, and an empty clipboard beats one holding the
+     * user's dictation. The real mitigation lives in [insertText], which takes
+     * this path only when `ACTION_SET_TEXT` would corrupt the field.
      */
     private fun paste(node: AccessibilityNodeInfo, text: String): Boolean {
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
-        val previous = try { cm.primaryClip } catch (_: Exception) { null }
 
         val clip = ClipData.newPlainText("Dictation", text).apply {
             // Android 13+ previews clipboard content in the chip; dictation
@@ -209,15 +215,11 @@ class DictationAccessibilityService : AccessibilityService() {
         val pasted = node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
 
         // The dictation must not linger on the clipboard once pasted — it can
-        // be as sensitive as anything else typed. Restore what the user had if
-        // there was something, otherwise clear it outright. Delayed because
-        // doing this synchronously races the target app reading the clip.
+        // be as sensitive as anything else typed. Delayed because clearing
+        // synchronously races the target app reading the clip.
         Handler(Looper.getMainLooper()).postDelayed({
-            try {
-                if (previous != null) cm.setPrimaryClip(previous) else clearClipboard(cm)
-            } catch (_: Exception) {
-            }
-        }, CLIPBOARD_RESTORE_DELAY_MS)
+            try { clearClipboard(cm) } catch (_: Exception) {}
+        }, CLIPBOARD_CLEAR_DELAY_MS)
         return pasted
     }
 
@@ -231,12 +233,24 @@ class DictationAccessibilityService : AccessibilityService() {
     }
 
     /** Outcome of an insert attempt — each case needs a different fallback. */
-    enum class InsertResult { INSERTED, NO_FOCUSED_FIELD, SERVICE_DISABLED }
+    enum class InsertResult {
+        INSERTED,
+
+        /**
+         * Inserted, but only by going through the clipboard — so the user's
+         * previous clip is gone. Surfaced separately from [INSERTED] so the
+         * cost is visible at the call site rather than buried in [paste].
+         */
+        INSERTED_VIA_CLIPBOARD,
+
+        NO_FOCUSED_FIELD,
+        SERVICE_DISABLED,
+    }
 
     companion object {
         private const val TAG = "DictationA11y"
         private const val MAX_TREE_DEPTH = 40
-        private const val CLIPBOARD_RESTORE_DELAY_MS = 1500L
+        private const val CLIPBOARD_CLEAR_DELAY_MS = 1500L
 
         @Volatile
         private var instance: DictationAccessibilityService? = null

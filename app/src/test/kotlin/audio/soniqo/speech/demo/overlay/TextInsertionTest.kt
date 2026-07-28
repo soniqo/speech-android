@@ -1,6 +1,8 @@
 package audio.soniqo.speech.demo.overlay
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TextInsertionTest {
@@ -93,5 +95,64 @@ class TextInsertionTest {
     fun endSelectionBeforeStartIsTreatedAsCaret() {
         val result = TextInsertion.insert("hello world", 5, 2, "x")
         assertEquals("hello x world", result.text)
+    }
+
+    // -------------------------------------------------------------------------
+    // contentsAreKnown — decides SET_TEXT vs. the clipboard-clobbering paste
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun emptyFieldContentsAreKnown() {
+        assertTrue(TextInsertion.contentsAreKnown(null, null, false))
+        assertTrue(TextInsertion.contentsAreKnown("", null, false))
+    }
+
+    @Test
+    fun displayedHintContentsAreKnown() {
+        assertTrue(TextInsertion.contentsAreKnown("Message", "Message", true))
+        // hintText populated but the flag never set.
+        assertTrue(TextInsertion.contentsAreKnown("Message", "Message", false))
+    }
+
+    @Test
+    fun placeholderExposedOnlyViaContentDescriptionIsKnownEmpty() {
+        // Telegram's composer: placeholder as text, no hintText, caret unset.
+        assertTrue(
+            TextInsertion.contentsAreKnown(
+                text = "Message",
+                hint = null,
+                showingHint = false,
+                contentDescription = "Message",
+                selStart = 0,
+                selEnd = 0,
+            )
+        )
+    }
+
+    @Test
+    fun caretInsideTextProvesRealContent() {
+        // A placeholder never carries a caret past the start, so this is text
+        // the user actually has — safe to rebuild with SET_TEXT.
+        assertTrue(
+            TextInsertion.contentsAreKnown(
+                text = "Message",
+                hint = null,
+                showingHint = false,
+                contentDescription = "Message",
+                selStart = 7,
+                selEnd = 7,
+            )
+        )
+        assertTrue(TextInsertion.contentsAreKnown("hello", null, false, selStart = 3, selEnd = 3))
+    }
+
+    @Test
+    fun ambiguousTextWithoutACaretIsNotKnown() {
+        // Text, no hint signal of any kind, caret unreported: this could be
+        // real content or a placeholder, so the caller must paste instead.
+        assertFalse(TextInsertion.contentsAreKnown("hello", null, false))
+        assertFalse(
+            TextInsertion.contentsAreKnown("hello", "Message", false, selStart = 0, selEnd = 0)
+        )
     }
 }

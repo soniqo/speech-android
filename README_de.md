@@ -128,8 +128,11 @@ Einrichtungsbildschirm zeigt, welche noch fehlen:
 
 Das Overlay-Fenster ist bewusst nicht fokussierbar, damit das Zielfeld beim
 Tippen auf die Schaltflächen den Eingabefokus behält. Der Text wird per
-`ACTION_SET_TEXT` an der Cursorposition eingefügt; für Felder, die das
-ablehnen, dient das Einfügen aus der Zwischenablage als Rückfallebene.
+`ACTION_SET_TEXT` an der Cursorposition eingefügt. Felder, deren tatsächlicher
+Inhalt nicht lesbar ist — manche Apps melden ihren Platzhalter als eigenen
+Feldtext —, werden stattdessen per Einfügen beschrieben, was den bisherigen
+Inhalt der Zwischenablage ersetzt; das Diktat wird unmittelbar danach daraus
+gelöscht.
 
 > Installation per APK statt über den Play Store? Android sperrt den
 > Bedienungshilfe-Schalter, bis er unter

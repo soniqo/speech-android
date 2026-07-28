@@ -128,8 +128,10 @@ pantalla de configuración muestra cuáles faltan:
 
 La ventana de la superposición es deliberadamente no enfocable, de modo que el
 campo de destino conserva el foco de entrada mientras se pulsan los botones. El
-texto se inserta en el cursor con `ACTION_SET_TEXT`, con pegado desde el
-portapapeles como alternativa para los campos que lo rechazan.
+texto se inserta en el cursor con `ACTION_SET_TEXT`. Los campos cuyo contenido
+real no se puede leer —algunas apps informan su marcador de posición como el
+propio texto del campo— se escriben pegando, lo que reemplaza lo que hubiera en
+el portapapeles; el dictado se borra de él justo después.
 
 > ¿Instalas desde un APK en vez de Play Store? Android bloquea el interruptor
 > de accesibilidad hasta que lo permitas en

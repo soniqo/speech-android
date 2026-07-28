@@ -36,7 +36,9 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
-import audio.soniqo.speech.ModelManager
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import audio.soniqo.speech.ModelDownloadWorker
 import audio.soniqo.speech.ModelPrecision
 import audio.soniqo.speech.PipelineMode
 import audio.soniqo.speech.PipelineState
@@ -91,6 +93,10 @@ class OverlayBubbleService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     @Volatile private var pipeline: SpeechPipeline? = null
+    private var pipelineStarted = false
+
+    /** Set once the download we enqueued is observably alive. See [loadPipeline]. */
+    private var sawLiveDownload = false
     private var audioRecord: AudioRecord? = null
     private var micJob: Job? = null
     private var finalizeJob: Job? = null
@@ -98,12 +104,15 @@ class OverlayBubbleService : Service() {
 
     /**
      * Open only for the dictation currently being captured or finalized.
-     * Results that arrive outside it belong to a committed or cancelled
-     * dictation and must not leak into the next one.
+     *
+     * [endTurn] stops the engine producing anything further for a finished
+     * dictation, but it cannot reach back into events already handed to
+     * [SpeechPipeline.events] — that buffer sits on this side of JNI. This gate
+     * catches those stragglers.
      */
     @Volatile private var sessionActive = false
 
-    /** When the engine last emitted anything; drives [drainEngine]. */
+    /** When the engine last emitted anything; drives [awaitFinalTranscription]. */
     @Volatile private var lastEngineEventAt = 0L
 
     /** When the current dictation started; scales the finalize wait. */
@@ -450,18 +459,80 @@ class OverlayBubbleService : Service() {
     // Pipeline
     // -------------------------------------------------------------------------
 
+    /**
+     * Download the models, then bring the pipeline up.
+     *
+     * The download goes through [ModelDownloadWorker] rather than calling
+     * `ModelManager.ensureModels` directly, because the demo activities enqueue
+     * *this same model set* into *this same cache directory*. `ensureModels`
+     * holds no lock: two callers on one directory resume the same `.tmp` files
+     * from independently tracked offsets, and either one's `clearModelCache()`
+     * can delete the files the other is mid-write on. Going through the unique
+     * work name means a download already in flight is joined instead of raced.
+     */
     private fun loadPipeline() {
         setState(UiState.LOADING)
+        ModelDownloadWorker.enqueue(
+            applicationContext,
+            ModelPrecision.INT8,
+            sttModel = STT_MODEL,
+        )
+        scope.launch {
+            WorkManager.getInstance(applicationContext)
+                .getWorkInfosForUniqueWorkFlow(
+                    ModelDownloadWorker.uniqueName(sttModel = STT_MODEL)
+                )
+                .collect { infos ->
+                    // Prefer the live run; fall back to the last finished one so
+                    // an already-complete download is picked up immediately.
+                    val info = infos.firstOrNull { !it.state.isFinished }
+                        ?: infos.lastOrNull() ?: return@collect
+                    when (info.state) {
+                        WorkInfo.State.ENQUEUED,
+                        WorkInfo.State.BLOCKED,
+                        WorkInfo.State.RUNNING -> {
+                            sawLiveDownload = true
+                            val total = info.progress.getInt(ModelDownloadWorker.KEY_TOTAL, 0)
+                            if (total > 0) {
+                                val done =
+                                    info.progress.getInt(ModelDownloadWorker.KEY_COMPLETED, 0)
+                                setStatus("$done/$total")
+                            }
+                        }
+                        WorkInfo.State.SUCCEEDED -> {
+                            val dir = info.outputData.getString(ModelDownloadWorker.KEY_MODEL_DIR)
+                            if (dir == null) {
+                                fail("Model download reported no directory")
+                            } else {
+                                startPipeline(dir)
+                            }
+                        }
+                        // A failure only counts once this run has been seen
+                        // alive. enqueue() commits asynchronously, so the first
+                        // emission can still be a finished record from an
+                        // earlier session — acting on that would tear down the
+                        // overlay over a download that is about to start.
+                        WorkInfo.State.FAILED -> if (sawLiveDownload) {
+                            fail(
+                                "Speech models failed to download: " +
+                                    (info.outputData.getString(ModelDownloadWorker.KEY_ERROR)
+                                        ?: "unknown")
+                            )
+                        }
+                        WorkInfo.State.CANCELLED -> if (sawLiveDownload) {
+                            fail("Model download was cancelled")
+                        }
+                    }
+                }
+        }
+    }
+
+    private fun startPipeline(modelDir: String) {
+        // The work flow keeps emitting after SUCCEEDED; the pipeline is built once.
+        if (pipelineStarted) return
+        pipelineStarted = true
         scope.launch(Dispatchers.Default) {
             try {
-                val modelDir = ModelManager.ensureModels(
-                    context = applicationContext,
-                    precision = ModelPrecision.INT8,
-                    sttModel = STT_MODEL,
-                ) { progress ->
-                    scope.launch { setStatus("${progress.completed}/${progress.totalFiles}") }
-                }
-
                 val config = SpeechConfig(
                     modelDir = modelDir,
                     sttModel = STT_MODEL,
@@ -481,18 +552,24 @@ class OverlayBubbleService : Service() {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "Overlay pipeline init failed", e)
                 withContext(Dispatchers.Main) {
-                    toast("Speech models failed to load: ${e.message ?: e.javaClass.simpleName}")
-                    stopSelf()
+                    fail("Speech models failed to load: ${e.message ?: e.javaClass.simpleName}")
                 }
             }
         }
     }
 
+    /** The overlay is useless without a pipeline; say why and get out of the way. */
+    private fun fail(message: String) {
+        Log.e(TAG, message)
+        toast(message)
+        stopSelf()
+    }
+
     private suspend fun collectEvents(p: SpeechPipeline) {
         p.events.collect { event ->
-            // Tracked regardless of the session gate — the drain needs to know
-            // when the engine last produced anything, including results it is
-            // about to discard.
+            // Tracked regardless of the session gate — the finalize wait needs
+            // to know when the engine last produced anything, including results
+            // it is about to discard.
             when (event) {
                 is SpeechEvent.SpeechStarted,
                 is SpeechEvent.SpeechEnded,
@@ -617,19 +694,21 @@ class OverlayBubbleService : Service() {
     }
 
     /**
-     * Wait until the engine stops emitting. speech-core never clears its
-     * pending-utterance queue on stop/start, so anything still queued when a
-     * new dictation begins would surface inside it. Holding the UI busy until
-     * the engine falls quiet is what actually prevents the leak.
+     * Close the dictation out inside the engine.
+     *
+     * Everything still buffered or queued belongs to the turn just finished, so
+     * it is dropped rather than carried into the next one. This used to be a
+     * timed drain — hold the UI busy until the engine falls quiet — because
+     * speech-core kept its pending-utterance queue across stop/start.
+     * speech-core#123 made turn boundaries explicit, so it is now one call that
+     * cannot time out early or late.
      */
-    private suspend fun drainEngine() {
-        val cap = System.currentTimeMillis() + DRAIN_CAP_MS
-        while (System.currentTimeMillis() < cap) {
-            val quiet = System.currentTimeMillis() - lastEngineEventAt > DRAIN_QUIET_MS
-            if (quiet && !engineBusy()) return
-            delay(50)
+    private fun endTurn() {
+        try {
+            pipeline?.cancelCurrentTurn()
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not cancel the current turn", e)
         }
-        Log.w(TAG, "Engine still emitting after ${DRAIN_CAP_MS}ms; giving up on drain")
     }
 
     /** Everything heard this session, including any unfinalized partial. */
@@ -730,9 +809,9 @@ class OverlayBubbleService : Service() {
             transcript.clear()
             partialText = ""
 
-            // Swallow anything still queued behind the committed result, so
-            // it cannot reappear in the next dictation.
-            drainEngine()
+            // Discard anything still queued behind the committed result, so it
+            // cannot reappear in the next dictation.
+            endTurn()
 
             if (text.isBlank()) {
                 setState(UiState.IDLE)
@@ -747,6 +826,12 @@ class OverlayBubbleService : Service() {
             setState(UiState.IDLE)
             when (result) {
                 DictationAccessibilityService.InsertResult.INSERTED -> {}
+                // The words landed, but the field's contents were ambiguous
+                // enough that only a paste was safe — which cost the user
+                // whatever was on their clipboard. Nothing to undo; logged so
+                // the frequency is visible when tuning contentsAreKnown().
+                DictationAccessibilityService.InsertResult.INSERTED_VIA_CLIPBOARD ->
+                    Log.i(TAG, "Inserted via paste; the user's clipboard was replaced")
                 // Never drop what the user said — park it on the clipboard so
                 // a long-press paste still gets them there.
                 DictationAccessibilityService.InsertResult.NO_FOCUSED_FIELD -> {
@@ -772,15 +857,12 @@ class OverlayBubbleService : Service() {
         partialText = ""
         speechActive = false
 
-        // Cancelled audio still has to be flushed out of the engine, or it
-        // resurfaces in the next dictation — exactly what Cancel must prevent.
-        // The busy state keeps a new recording from starting mid-drain.
-        setState(UiState.TRANSCRIBING)
-        finalizeJob = scope.launch {
-            withContext(Dispatchers.Default) { pushSilence() }
-            drainEngine()
-            setState(UiState.IDLE)
-        }
+        // Cancelled audio still has to leave the engine or it resurfaces in the
+        // next dictation — exactly what Cancel must prevent. Dropping the turn
+        // does that outright, so there is no flush to push and no drain to wait
+        // out: Cancel returns the bubble to idle immediately.
+        endTurn()
+        setState(UiState.IDLE)
     }
 
     private fun stopMicrophone() {
@@ -863,8 +945,6 @@ class OverlayBubbleService : Service() {
         private const val FRAME_SAMPLES = 512
         /** ~1.5 s of silence at 16 kHz — comfortably past the VAD's 0.5 s. */
         private const val SILENCE_FRAMES = 48
-        private const val DRAIN_QUIET_MS = 400L
-        private const val DRAIN_CAP_MS = 2500L
         private val STT_MODEL = SttModel.PARAKEET
 
         const val ACTION_STOP = "audio.soniqo.speech.demo.overlay.STOP"

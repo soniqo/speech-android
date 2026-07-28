@@ -184,7 +184,10 @@ shows which are still missing:
 
 The overlay window is deliberately non-focusable so the target field keeps
 input focus while the buttons are tapped. Text is inserted at the cursor with
-`ACTION_SET_TEXT`, falling back to clipboard paste for fields that reject it.
+`ACTION_SET_TEXT`. Fields whose real contents cannot be read — some apps report
+their placeholder as the field's own text — are written by pasting instead,
+which replaces whatever was on the clipboard; the dictation is cleared from it
+right after.
 
 > Installing from an APK rather than the Play Store? Android blocks the
 > accessibility toggle until you allow it under

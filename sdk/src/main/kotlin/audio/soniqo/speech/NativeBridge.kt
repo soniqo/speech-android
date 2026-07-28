@@ -28,6 +28,7 @@ internal object NativeBridge {
     external fun nativeDestroy(handle: Long)
     external fun nativeStart(handle: Long)
     external fun nativeStop(handle: Long)
+    external fun nativeCancelTurn(handle: Long)
     external fun nativePushAudio(handle: Long, samples: FloatArray, count: Int)
     external fun nativeResumeListen(handle: Long)
     external fun nativeGetState(handle: Long): Int

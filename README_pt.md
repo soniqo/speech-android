@@ -128,8 +128,10 @@ tela de configuração mostra quais ainda faltam:
 
 A janela da sobreposição é deliberadamente não focável, para que o campo de
 destino mantenha o foco de entrada enquanto os botões são tocados. O texto é
-inserido no cursor com `ACTION_SET_TEXT`, com colagem da área de transferência
-como alternativa para campos que a recusam.
+inserido no cursor com `ACTION_SET_TEXT`. Campos cujo conteúdo real não pode ser
+lido — alguns apps informam o próprio placeholder como texto do campo — são
+preenchidos por colagem, o que substitui o que estava na área de transferência;
+o ditado é apagado dela logo em seguida.
 
 > Instalando por APK em vez da Play Store? O Android bloqueia o botão de
 > acessibilidade até liberá-lo em

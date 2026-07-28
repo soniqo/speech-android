@@ -128,8 +128,10 @@ l'écran de configuration indique celles qui manquent :
 
 La fenêtre de superposition est délibérément non focalisable, afin que le champ
 cible conserve le focus de saisie pendant l'appui sur les boutons. Le texte est
-inséré au curseur via `ACTION_SET_TEXT`, avec un collage depuis le
-presse-papiers en secours pour les champs qui le refusent.
+inséré au curseur via `ACTION_SET_TEXT`. Les champs dont le contenu réel est
+illisible — certaines apps annoncent leur texte indicatif comme le texte du
+champ lui-même — sont remplis par un collage, ce qui remplace ce qui se
+trouvait dans le presse-papiers ; la dictée en est effacée juste après.
 
 > Installation depuis un APK plutôt que le Play Store ? Android bloque le
 > commutateur d'accessibilité tant qu'il n'est pas autorisé dans

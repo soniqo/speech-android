@@ -50,6 +50,33 @@ object TextInsertion {
     }
 
     /**
+     * True when the field's real contents can be reconstructed from what the
+     * node reports.
+     *
+     * `ACTION_SET_TEXT` rewrites the whole value, so it is only safe when we
+     * know that value; guessing wrong bakes a placeholder into the field
+     * permanently. Two things establish it. Either [existingText] recognises
+     * the field as empty — every placeholder signal we know of resolves
+     * there — or the caret sits past the start, which a displayed placeholder
+     * never does, so the text is content the user actually has.
+     *
+     * When neither holds, the caller has to fall back to pasting, which costs
+     * the user their clipboard. Widening this predicate is how that gets rarer.
+     */
+    fun contentsAreKnown(
+        text: String?,
+        hint: String?,
+        showingHint: Boolean,
+        contentDescription: String? = null,
+        selStart: Int = -1,
+        selEnd: Int = -1,
+    ): Boolean {
+        val existing = existingText(text, hint, showingHint, contentDescription, selStart, selEnd)
+        if (existing.isEmpty()) return true
+        return selStart > 0 || selEnd > 0
+    }
+
+    /**
      * Splice [insert] into [existing] at the cursor / selection given by
      * [selStart]..[selEnd]. Out-of-range or unknown (-1) offsets mean "append
      * at the end", which is what accessibility nodes report when a field has

@@ -40,6 +40,18 @@ interface SpeechPipeline : AutoCloseable {
     fun start()
     fun stop()
 
+    /**
+     * Throw away the turn in flight without tearing down the models or worker
+     * threads: buffered and queued audio is dropped, in-progress STT/LLM/TTS
+     * results are invalidated, and turn detection resets for an independent
+     * stream. What a long-lived listener wants when the user abandons an
+     * utterance — [stop] plus [start] would do the same but costs a restart.
+     *
+     * The default is a no-op so custom implementations keep compiling; they
+     * inherit no isolation guarantee and should override it.
+     */
+    fun cancelCurrentTurn() {}
+
     /** Feed PCM Float32 microphone samples at 16 kHz. */
     fun pushAudio(samples: FloatArray)
 
@@ -152,6 +164,10 @@ internal class SpeechPipelineImpl(config: SpeechConfig) : SpeechPipeline {
 
     override fun stop() {
         NativeBridge.nativeStop(handle)
+    }
+
+    override fun cancelCurrentTurn() {
+        NativeBridge.nativeCancelTurn(handle)
     }
 
     override fun pushAudio(samples: FloatArray) {
