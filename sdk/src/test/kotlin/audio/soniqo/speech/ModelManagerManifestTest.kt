@@ -52,6 +52,35 @@ class ModelManagerManifestTest {
     }
 
     @Test
+    fun `canary manifest ships the int8 pair and its decode contract`() {
+        val canaryFiles = modelFiles(sttModel = SttModel.CANARY)
+            .filter { it.repo == "Canary-180M-Flash-ONNX" }
+
+        // config.json is not optional here: the wrapper reads the decode
+        // prompt, cache dimensions and end-of-text id out of the bundle, and
+        // refuses to construct without them.
+        val expected = listOf(
+            ModelManager.ModelFile("Canary-180M-Flash-ONNX", "canary-encoder-int8.onnx"),
+            ModelManager.ModelFile("Canary-180M-Flash-ONNX", "canary-decoder-int8.onnx"),
+            ModelManager.ModelFile("Canary-180M-Flash-ONNX", "vocab.json"),
+            ModelManager.ModelFile("Canary-180M-Flash-ONNX", "config.json"),
+        )
+
+        assertEquals(expected, canaryFiles)
+    }
+
+    @Test
+    fun `canary keeps its int8 filenames at fp32 precision`() {
+        // The bundle publishes one quantization, so precision must not rewrite
+        // the filenames the way it does for Parakeet.
+        assertEquals(
+            modelFiles(sttModel = SttModel.CANARY).filter { it.repo == "Canary-180M-Flash-ONNX" },
+            modelFiles(precision = ModelPrecision.FP32, sttModel = SttModel.CANARY)
+                .filter { it.repo == "Canary-180M-Flash-ONNX" },
+        )
+    }
+
+    @Test
     fun `model set key changes when stt model changes`() {
         assertNotEquals(
             modelSetKey(sttModel = SttModel.PARAKEET_EOU),

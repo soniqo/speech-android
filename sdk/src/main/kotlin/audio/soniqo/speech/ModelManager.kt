@@ -85,6 +85,21 @@ object ModelManager {
                 ModelFile("Parakeet-TDT-v3-ONNX", "parakeet-decoder-joint${suffix}.onnx"),
                 ModelFile("Parakeet-TDT-v3-ONNX", "vocab.json"),
             )
+            // Canary 180M Flash: offline attention-encoder-decoder, en/de/es/fr
+            // with punctuation, and translation between those four from the same
+            // graphs. INT8-only here — [precision] does not alter the filenames.
+            // The quantization covers MatMul/Gemm and leaves the convolutions in
+            // FP32 on purpose: an encoder quantized with ConvInteger does not run
+            // on the mobile onnxruntime build, which is the same limitation
+            // documented for Nemotron below.
+            // config.json is required, not optional: the wrapper reads the decode
+            // prompt, cache dimensions and end-of-text id out of the bundle.
+            SttModel.CANARY -> files += listOf(
+                ModelFile("Canary-180M-Flash-ONNX", "canary-encoder-int8.onnx"),
+                ModelFile("Canary-180M-Flash-ONNX", "canary-decoder-int8.onnx"),
+                ModelFile("Canary-180M-Flash-ONNX", "vocab.json"),
+                ModelFile("Canary-180M-Flash-ONNX", "config.json"),
+            )
             SttModel.NEMOTRON_MULTILINGUAL -> {
                 val base = "Nemotron-3.5-ASR-Streaming-Multilingual-0.6B"
                 files += when (sttBackend) {

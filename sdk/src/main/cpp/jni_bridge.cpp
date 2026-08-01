@@ -4,6 +4,7 @@
 #include <speech_core/models/deepfilter.h>
 #include <speech_core/models/kokoro_tts.h>
 #include <speech_core/models/onnx_engine.h>
+#include <speech_core/models/onnx_canary_stt.h>
 #include <speech_core/models/onnx_nemotron_streaming_stt.h>
 #include <speech_core/models/onnx_pocket_tts.h>
 #include <speech_core/models/parakeet_stt.h>
@@ -71,6 +72,7 @@ struct SynthesizerHandle {
 static constexpr int STT_PARAKEET = 0;
 static constexpr int STT_NEMOTRON_MULTILINGUAL = 1;
 static constexpr int STT_PARAKEET_EOU = 2;
+static constexpr int STT_CANARY = 3;
 static constexpr int BACKEND_ONNX = 0;
 static constexpr int BACKEND_LITERT = 1;
 static constexpr int TTS_KOKORO = 0;
@@ -286,6 +288,24 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
                 if (lang != "auto" && !lang.empty()) m->set_language(lang);
                 h->stt = std::move(m);
             }
+        } else if (sttModel == STT_CANARY) {
+            // Canary 180M Flash is offline per utterance: the encoder runs on
+            // the whole VAD segment, then tokens decode one at a time. The
+            // wrapper reads its prompt, cache shape and end-of-text from the
+            // bundle's graph metadata, so nothing is configured here beyond
+            // the language. English, German, Spanish and French; an unknown
+            // code leaves the bundle's default in place rather than failing
+            // the whole pipeline.
+            auto m = std::make_unique<speech_core::OnnxCanaryStt>(
+                dir + "/canary-encoder-int8.onnx",
+                dir + "/canary-decoder-int8.onnx",
+                dir + "/vocab.json",
+                nnapi);
+            if (lang != "auto" && !lang.empty() && !m->set_language(lang)) {
+                LOGI("Canary has no prompt token for '%s', keeping the bundle default",
+                     lang.c_str());
+            }
+            h->stt = std::move(m);
         } else if (sttModel == STT_PARAKEET_EOU) {
             // beamSize > 1 enables modified beam search, which contextual
             // biasing (nativeSetContextPhrases) rides on; <= 1 stays greedy.

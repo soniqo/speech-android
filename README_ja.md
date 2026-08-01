@@ -29,6 +29,7 @@
 | --- | --- | --- | --- | --- |
 | [Parakeet-EOU 120M](https://soniqo.audio/ja/guides/dictate) | ストリーミング STT + EOU(既定) | [153 MB](https://huggingface.co/soniqo/Parakeet-EOU-120M-ONNX-INT8) | 232 MB | 25 |
 | [Parakeet TDT v3](https://soniqo.audio/ja/guides/parakeet/android) | 広範囲 STT(任意) | [891 MB](https://huggingface.co/soniqo/Parakeet-TDT-v3-ONNX) | ~1.1-1.3 GB | 114 |
+| [Canary 180M Flash](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | オフライン STT + 翻訳（任意） | [273 MB](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | 未計測 | 4 (en, de, es, fr) |
 | [Kokoro 82M](https://soniqo.audio/ja/guides/kokoro/android) | テキスト読み上げ(既定) | [330 MB](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | 640 MB | 8(en、fr、es、it、pt、hi、ja、zh) |
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | ストリーミング音声合成(任意、固定 Alba 音声) | ~126 MB | 未計測 | 英語 |
 | [Supertonic-3](https://soniqo.audio/ja/guides/supertonic) | テキスト読み上げ(LiteRT、flow-matching、G2P-free、44.1 kHz) | [~380 MB](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 MB | 31 |

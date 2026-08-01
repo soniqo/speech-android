@@ -10,7 +10,8 @@ internal object NativeBridge {
         modelDir: String,
         useNnapi: Boolean,
         useInt8: Boolean,
-        sttModel: Int,    // SttModel.ordinal: 0=PARAKEET, 1=NEMOTRON_MULTILINGUAL, 2=PARAKEET_EOU
+        sttModel: Int,    // SttModel.ordinal: 0=PARAKEET, 1=NEMOTRON_MULTILINGUAL,
+                          //                  2=PARAKEET_EOU, 3=CANARY
         sttBackend: Int,  // SttBackend.ordinal: 0=ONNX, 1=LITERT
         ttsModel: Int,    // 0=KOKORO, 1=SUPERTONIC, 2=KOKORO_SHORT_TURN, 3=POCKET
         pipelineMode: Int, // PipelineMode.ordinal: 0=ECHO, 1=TRANSCRIBE_ONLY

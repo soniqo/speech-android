@@ -5,7 +5,7 @@ enum class ModelPrecision { FP32, INT8 }
 /** On-device STT model. PARAKEET_EOU is the low-memory streaming default.
  *  PARAKEET is the larger TDT v3 model with language-token detection;
  *  NEMOTRON_MULTILINGUAL is prompt-conditioned and uses [SpeechConfig.language]. */
-enum class SttModel { PARAKEET, NEMOTRON_MULTILINGUAL, PARAKEET_EOU }
+enum class SttModel { PARAKEET, NEMOTRON_MULTILINGUAL, PARAKEET_EOU, CANARY }
 
 /** Native inference backend for the STT model. Only Nemotron multilingual
  *  ships both; Parakeet is ONNX-only. */
