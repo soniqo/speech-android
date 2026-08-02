@@ -23,6 +23,13 @@ object ModelManager {
     private const val BASE_URL = "https://huggingface.co/soniqo"
     private const val POCKET_TTS_REVISION = "v1.0.0"
     private const val POCKET_TTS_DIR = "pocket_tts"
+    // Canary publishes no tags, so this is the commit that the bundle in the
+    // README model table was measured against. Pinned rather than tracking
+    // main: the wrapper reads its decode prompt, cache dimensions and input
+    // signature out of the bundle, so a re-export changes what the native side
+    // must feed the graph. An unpinned fetch turns that into a runtime type
+    // mismatch on a device that happened to download after the change.
+    private const val CANARY_REVISION = "7e9f3f9cc47a877f47bda6ace292111c143be0fe"
     private const val NEMOTRON_LITERT_INT8_REVISION = "v1.0.0"
     private const val NEMOTRON_LITERT_FP16_REVISION =
         "1503a9a1eb75b813b83ba65bf5e9fecea4a46091"
@@ -95,10 +102,14 @@ object ModelManager {
             // config.json is required, not optional: the wrapper reads the decode
             // prompt, cache dimensions and end-of-text id out of the bundle.
             SttModel.CANARY -> files += listOf(
-                ModelFile("Canary-180M-Flash-ONNX", "canary-encoder-int8.onnx"),
-                ModelFile("Canary-180M-Flash-ONNX", "canary-decoder-int8.onnx"),
-                ModelFile("Canary-180M-Flash-ONNX", "vocab.json"),
-                ModelFile("Canary-180M-Flash-ONNX", "config.json"),
+                ModelFile("Canary-180M-Flash-ONNX", "canary-encoder-int8.onnx",
+                    revision = CANARY_REVISION),
+                ModelFile("Canary-180M-Flash-ONNX", "canary-decoder-int8.onnx",
+                    revision = CANARY_REVISION),
+                ModelFile("Canary-180M-Flash-ONNX", "vocab.json",
+                    revision = CANARY_REVISION),
+                ModelFile("Canary-180M-Flash-ONNX", "config.json",
+                    revision = CANARY_REVISION),
             )
             SttModel.NEMOTRON_MULTILINGUAL -> {
                 val base = "Nemotron-3.5-ASR-Streaming-Multilingual-0.6B"
@@ -605,6 +616,12 @@ object ModelManager {
         add("tts=${ttsCacheName(ttsModel)}")
         if (sttModel == SttModel.NEMOTRON_MULTILINGUAL && sttBackend == SttBackend.LITERT) {
             add("sttRevision=${nemotronLiteRtRevision(precision)}")
+        }
+        // Scoped to Canary rather than bumping MODEL_VERSION: an install that
+        // cached the bundle while it tracked main must discard it, but nothing
+        // else needs to re-download ~1.2 GB to get there.
+        if (sttModel == SttModel.CANARY) {
+            add("sttRevision=$CANARY_REVISION")
         }
     }.joinToString("|")
 

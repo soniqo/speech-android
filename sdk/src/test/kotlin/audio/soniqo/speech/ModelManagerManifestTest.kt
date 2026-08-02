@@ -58,12 +58,18 @@ class ModelManagerManifestTest {
 
         // config.json is not optional here: the wrapper reads the decode
         // prompt, cache dimensions and end-of-text id out of the bundle, and
-        // refuses to construct without them.
+        // refuses to construct without them. Every file is pinned to one
+        // revision for the same reason — the bundle defines what the native
+        // side must feed the graph, so tracking main lets a re-export change
+        // the contract underneath an install.
+        val revision = "7e9f3f9cc47a877f47bda6ace292111c143be0fe"
         val expected = listOf(
-            ModelManager.ModelFile("Canary-180M-Flash-ONNX", "canary-encoder-int8.onnx"),
-            ModelManager.ModelFile("Canary-180M-Flash-ONNX", "canary-decoder-int8.onnx"),
-            ModelManager.ModelFile("Canary-180M-Flash-ONNX", "vocab.json"),
-            ModelManager.ModelFile("Canary-180M-Flash-ONNX", "config.json"),
+            ModelManager.ModelFile(
+                "Canary-180M-Flash-ONNX", "canary-encoder-int8.onnx", revision),
+            ModelManager.ModelFile(
+                "Canary-180M-Flash-ONNX", "canary-decoder-int8.onnx", revision),
+            ModelManager.ModelFile("Canary-180M-Flash-ONNX", "vocab.json", revision),
+            ModelManager.ModelFile("Canary-180M-Flash-ONNX", "config.json", revision),
         )
 
         assertEquals(expected, canaryFiles)
