@@ -8,6 +8,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -24,6 +25,7 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
+import android.os.PersistableBundle
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
@@ -715,9 +717,27 @@ class OverlayBubbleService : Service() {
     private fun dictatedText(): String =
         (transcript.toString() + if (partialText.isNotEmpty()) " $partialText" else "").trim()
 
+    /**
+     * Last resort when no editable field can be reached: nothing dictated is
+     * dropped, so the text is left on the clipboard for the user to place.
+     *
+     * Marked sensitive for the same reason [DictationAccessibilityService]
+     * marks its paste clip — Android 13+ otherwise renders the dictation in
+     * the clipboard chip. It matters more here, not less: the paste path holds
+     * the clip for milliseconds and then clears it, while this one leaves it
+     * there deliberately, so the preview is on screen for an utterance the
+     * user never managed to insert anywhere.
+     */
     private fun copyToClipboard(text: String) {
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
-        cm.setPrimaryClip(ClipData.newPlainText("Dictation", text))
+        val clip = ClipData.newPlainText("Dictation", text).apply {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                description.extras = PersistableBundle().apply {
+                    putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                }
+            }
+        }
+        cm.setPrimaryClip(clip)
     }
 
     // -------------------------------------------------------------------------
