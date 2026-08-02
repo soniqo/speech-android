@@ -37,10 +37,26 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      # The SDK suite covers the download manifest; the app suite covers the
-      # demo's own logic, including text insertion. Neither ran on a PR before.
+      # setup.sh fetches the ONNX Runtime and LiteRT AARs the native build
+      # links against. It is idempotent — it compares the installed version.txt
+      # against the versions pinned in the script — so a cache hit makes it a
+      # no-op rather than something to skip.
+      - name: Cache native dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ort
+            litert
+          key: native-deps-${{ runner.os }}-${{ hashFiles('setup.sh') }}
+
+      - name: Run setup
+        run: ./setup.sh
+
+      # The SDK suite covers the download manifest, the app suite covers the
+      # demo's own logic including text insertion, and control-demo matches
+      # what the release build runs. None of them ran on a PR before.
       - name: Unit tests
-        run: ./gradlew :sdk:test :app:testDebugUnitTest
+        run: ./gradlew :sdk:test :app:testDebugUnitTest :control-demo:testDebugUnitTest
 
       # Compiles the JNI bridge against the pinned speech-core, so a submodule
       # that does not build with the current bridge fails here rather than at
