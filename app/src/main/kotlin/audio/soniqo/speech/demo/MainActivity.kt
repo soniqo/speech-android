@@ -469,7 +469,9 @@ class MainActivity : ComponentActivity() {
             appendLine("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
             appendLine("Android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
             appendLine("Hardware: ${android.os.Build.HARDWARE}")
-            appendLine("SoC: ${android.os.Build.SOC_MANUFACTURER} ${android.os.Build.SOC_MODEL}")
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                appendLine("SoC: ${android.os.Build.SOC_MANUFACTURER} ${android.os.Build.SOC_MODEL}")
+            }
             appendLine("ABI: ${android.os.Build.SUPPORTED_ABIS.joinToString()}")
             appendLine("RAM: ${rt.freeMemory() / 1_048_576}MB free / ${rt.maxMemory() / 1_048_576}MB max")
             appendLine()

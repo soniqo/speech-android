@@ -1,6 +1,7 @@
 package audio.soniqo.speech.service
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.ContextParams
 import android.content.Intent
@@ -325,6 +326,7 @@ open class SpeechRecognitionService : RecognitionService() {
      * device (negative [AudioRecord.getMinBufferSize]). Overridden in tests so
      * Robolectric doesn't have to stand up a real recorder.
      */
+    @SuppressLint("MissingPermission") // onStartListening has already checked the permissions.
     protected open fun newAudioRecord(context: Context): AudioRecord? {
         val sampleRate = 16_000
         val format = AudioFormat.Builder()

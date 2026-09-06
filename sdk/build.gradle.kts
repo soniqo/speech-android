@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.maven.publish)
     id("maven-publish")
 }
@@ -11,7 +10,8 @@ val speechCoreDir = providers.gradleProperty("SPEECH_CORE_DIR")
 
 android {
     namespace = "audio.soniqo.speech"
-    compileSdk = 35
+    compileSdk = 37
+    buildToolsVersion = "37.0.0"
     // NDK r28+ defaults to 16 KB ELF alignment; pin r29 for reproducible AARs.
     ndkVersion = "29.0.14206865"
 
@@ -38,7 +38,7 @@ android {
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+            version = "4.1.2"
         }
     }
 
@@ -54,15 +54,17 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     testOptions {
         unitTests.isIncludeAndroidResources = true
         // android.util.Log is a no-op under unit tests rather than throwing,
         // so production code can log on paths the tests exercise.
         unitTests.isReturnDefaultValues = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 
