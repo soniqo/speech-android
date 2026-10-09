@@ -1,5 +1,6 @@
 # Keep JNI callback interfaces — native code looks up methods by name
 -keep class audio.soniqo.speech.NativeBridge { *; }
+-keep class audio.soniqo.speech.KeywordDetection { *; }
 -keep class audio.soniqo.speech.NativeBridge$EventCallback { *; }
 -keep class audio.soniqo.speech.NativeBridge$SynthesisCallback { *; }
 -keep class audio.soniqo.speech.NativeBridge$LlmCallback { *; }

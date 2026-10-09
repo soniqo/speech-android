@@ -10,6 +10,7 @@
 #include <speech_core/models/onnx_redimnet_speaker_embedding.h>
 #include <speech_core/models/onnx_smart_turn.h>
 #include <speech_core/models/onnx_sortformer_diarizer.h>
+#include <speech_core/models/onnx_zipformer_kws.h>
 #include <speech_core/models/parakeet_stt.h>
 #include <speech_core/models/nemotron_multilingual_stt.h>
 #include <speech_core/models/silero_vad.h>
@@ -1492,4 +1493,87 @@ Java_audio_soniqo_speech_NativeBridge_nativeEmbed(
     return float_array(env, embedding);
 }
 
+JNIEXPORT jlong JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeCreateKeywordSpotter(JNIEnv* env, jobject, jstring directory,
+    jobjectArray phrases, jobjectArray token_arrays, jfloatArray thresholds, jfloatArray boosts, jint beam) {
+    try {
+        if (!directory || !phrases || !token_arrays || !thresholds || !boosts)
+            throw std::invalid_argument("Missing KWS configuration");
+        jsize count = env->GetArrayLength(phrases);
+        if (count < 1 || count > 128 || env->GetArrayLength(token_arrays) != count ||
+            env->GetArrayLength(thresholds) != count || env->GetArrayLength(boosts) != count)
+            throw std::invalid_argument("Invalid KWS phrase arrays");
+        std::vector<float> levels(count), scores(count);
+        env->GetFloatArrayRegion(thresholds, 0, count, levels.data());
+        env->GetFloatArrayRegion(boosts, 0, count, scores.data());
+        if (env->ExceptionCheck()) return 0;
+        std::vector<speech_core::KwsKeyword> keywords;
+        for (jsize i = 0; i < count; ++i) {
+            auto phrase = static_cast<jstring>(env->GetObjectArrayElement(phrases, i));
+            auto tokens = static_cast<jintArray>(env->GetObjectArrayElement(token_arrays, i));
+            if (!phrase || !tokens) throw std::invalid_argument("Missing KWS phrase/token array");
+            jsize n = env->GetArrayLength(tokens);
+            if (n < 1 || n > 128) { env->DeleteLocalRef(phrase); env->DeleteLocalRef(tokens); throw std::invalid_argument("Invalid KWS token count"); }
+            std::vector<int> ids(n); env->GetIntArrayRegion(tokens, 0, n, ids.data());
+            keywords.push_back({jstring_to_string(env, phrase), std::move(ids), levels[i], scores[i]});
+            env->DeleteLocalRef(phrase); env->DeleteLocalRef(tokens);
+            if (env->ExceptionCheck()) return 0;
+        }
+        auto spotter = std::make_unique<speech_core::OnnxZipformerKws>(jstring_to_string(env, directory), std::move(keywords), beam);
+        return reinterpret_cast<jlong>(spotter.release());
+    } catch (const std::exception& e) { throw_native_failure(env, "Keyword model failed", e); return 0; }
+}
+
+static jobjectArray keyword_hits(JNIEnv* env, const std::vector<speech_core::KwsDetection>& hits) {
+    jclass type = env->FindClass("audio/soniqo/speech/KeywordDetection");
+    if (!type) return nullptr;
+    jmethodID init = env->GetMethodID(type, "<init>", "(Ljava/lang/String;[I[JJD)V");
+    if (!init) { env->DeleteLocalRef(type); return nullptr; }
+    jobjectArray result = env->NewObjectArray(static_cast<jsize>(hits.size()), type, nullptr);
+    for (size_t i = 0; result && i < hits.size() && !env->ExceptionCheck(); ++i) {
+        const auto& hit = hits[i];
+        jstring phrase = env->NewStringUTF(hit.phrase.c_str());
+        jintArray tokens = env->NewIntArray(static_cast<jsize>(hit.tokens.size()));
+        jlongArray times = env->NewLongArray(static_cast<jsize>(hit.token_frames.size()));
+        if (phrase && tokens && times) {
+            env->SetIntArrayRegion(tokens, 0, static_cast<jsize>(hit.tokens.size()), hit.tokens.data());
+            std::vector<jlong> frames(hit.token_frames.begin(), hit.token_frames.end());
+            env->SetLongArrayRegion(times, 0, static_cast<jsize>(frames.size()), frames.data());
+            jobject object = env->NewObject(type, init, phrase, tokens, times, static_cast<jlong>(hit.stream_frame), hit.audio_end_seconds);
+            if (object) { env->SetObjectArrayElement(result, static_cast<jsize>(i), object); env->DeleteLocalRef(object); }
+        }
+        if (phrase) env->DeleteLocalRef(phrase);
+        if (tokens) env->DeleteLocalRef(tokens);
+        if (times) env->DeleteLocalRef(times);
+    }
+    env->DeleteLocalRef(type); return result;
+}
+JNIEXPORT void JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeDestroyKeywordSpotter(JNIEnv*, jobject, jlong handle) {
+    delete reinterpret_cast<speech_core::OnnxZipformerKws*>(handle);
+}
+JNIEXPORT jobjectArray JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeKeywordPush(JNIEnv* env, jobject, jlong handle, jfloatArray pcm, jint count) {
+    try {
+        if (!handle || !pcm || count < 0 || count > 32000 || count > env->GetArrayLength(pcm))
+            throw std::invalid_argument("Invalid keyword PCM block or closed spotter");
+        std::vector<float> samples(static_cast<size_t>(count));
+        env->GetFloatArrayRegion(pcm, 0, count, samples.data()); if (env->ExceptionCheck()) return nullptr;
+        return keyword_hits(env, reinterpret_cast<speech_core::OnnxZipformerKws*>(handle)->push(samples.data(), samples.size()));
+    } catch (const std::exception& e) { throw_native_failure(env, "Keyword detection failed", e); return nullptr; }
+}
+JNIEXPORT jobjectArray JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeKeywordEnd(JNIEnv* env, jobject, jlong handle) {
+    try {
+        if (!handle) throw std::invalid_argument("Keyword spotter is closed");
+        return keyword_hits(env, reinterpret_cast<speech_core::OnnxZipformerKws*>(handle)->finish());
+    } catch (const std::exception& e) { throw_native_failure(env, "Keyword finalization failed", e); return nullptr; }
+}
+JNIEXPORT void JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeKeywordReset(JNIEnv* env, jobject, jlong handle) {
+    try {
+        if (!handle) throw std::invalid_argument("Keyword spotter is closed");
+        reinterpret_cast<speech_core::OnnxZipformerKws*>(handle)->reset();
+    } catch (const std::exception& e) { throw_native_failure(env, "Keyword reset failed", e); }
+}
 } // extern "C"

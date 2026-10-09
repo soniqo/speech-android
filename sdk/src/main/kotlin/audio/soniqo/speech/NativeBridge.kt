@@ -2,6 +2,13 @@ package audio.soniqo.speech
 
 internal object NativeBridge {
 
+    external fun nativeCreateKeywordSpotter(modelDir: String, phrases: Array<String>, tokens: Array<IntArray>,
+        thresholds: FloatArray, boosts: FloatArray, beamSize: Int): Long
+    external fun nativeDestroyKeywordSpotter(handle: Long)
+    external fun nativeKeywordPush(handle: Long, samples: FloatArray, count: Int): Array<KeywordDetection>
+    external fun nativeKeywordEnd(handle: Long): Array<KeywordDetection>
+    external fun nativeKeywordReset(handle: Long)
+
     init {
         System.loadLibrary("speech_android")
     }
