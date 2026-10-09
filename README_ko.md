@@ -76,7 +76,7 @@ Kokoro와 Supertonic 모두 직접 합성 시 호출 단위로 음성 프리셋�
 
 ```kotlin
 dependencies {
-    implementation("audio.soniqo:speech:0.0.22")
+    implementation("audio.soniqo:speech:0.0.23")
 }
 ```
 
