@@ -22,10 +22,10 @@ clock; `endStream` finalizes the tail, and subsequent input requires reset.
 Close is idempotent. Invalid configurations, unsupported tensors and native
 failures throw rather than returning successful empty results.
 
-This branch pins the core feature commit for
-[speech-core PR #150](https://github.com/soniqo/speech-core/pull/150), so the
-normal SDK build needs no local core-directory override. Merge the core PR
-first and pin its merged commit before releasing the SDK. A downstream app's
+The SDK pins merged speech-core commit
+`b45edaae2bf33a2a4a7651ef331acfc023dc7a6f` from
+[PR #150](https://github.com/soniqo/speech-core/pull/150), so the normal SDK
+build needs no local core-directory override. A downstream app's
 model source, immutable revision and SHA-256
 manifest are separate release requirements; this API does not provide assets
 or authorize a public release from a local Maven build.
