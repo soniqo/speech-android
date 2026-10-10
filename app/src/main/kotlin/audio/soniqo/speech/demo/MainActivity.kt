@@ -33,7 +33,9 @@ import audio.soniqo.speech.SpeechConfig
 import audio.soniqo.speech.SpeechEvent
 import audio.soniqo.speech.SpeechPipeline
 import audio.soniqo.speech.SttModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -55,6 +57,10 @@ class MainActivity : ComponentActivity() {
     private lateinit var chatLayout: LinearLayout
     private lateinit var chatScroll: ScrollView
     private lateinit var downloadProgress: ProgressBar
+
+    internal var pipelineFactory: (SpeechConfig) -> SpeechPipeline = { config ->
+        SpeechPipeline(config)
+    }
 
     companion object {
         private const val TTS_SAMPLE_RATE = 24000
@@ -297,7 +303,9 @@ class MainActivity : ComponentActivity() {
 
     private fun initPipeline(modelDir: String) {
         lifecycleScope.launch {
+            var pendingPipeline: SpeechPipeline? = null
             try {
+                setStatus("loading models...")
                 val config = SpeechConfig(
                     modelDir = modelDir,
                     useNnapi = !isEmulator,
@@ -306,8 +314,13 @@ class MainActivity : ComponentActivity() {
                     emitPartialTranscriptions = true,
                 )
 
-                val p = SpeechPipeline(config)
+                // Keep ownership here until the main thread accepts the result:
+                // withContext can discard it if the activity is destroyed while models load.
+                val p = withContext(Dispatchers.Default) {
+                    pipelineFactory(config).also { pendingPipeline = it }
+                }
                 pipeline = p
+                pendingPipeline = null
 
                 launch {
                     p.events.collect { event ->
@@ -424,6 +437,7 @@ class MainActivity : ComponentActivity() {
                 }
 
             } catch (e: Throwable) {
+                if (e is CancellationException) throw e
                 val log = buildDiagnosticLog(e)
                 writeCrashLog(log)
                 withContext(Dispatchers.Main) {
@@ -432,6 +446,12 @@ class MainActivity : ComponentActivity() {
                     addReportButton(log)
                     setStatus("error — tap to retry")
                     statusView.setOnClickListener { retryInit() }
+                }
+            } finally {
+                pendingPipeline?.let { unclaimed ->
+                    withContext(NonCancellable) {
+                        withContext(Dispatchers.Default) { unclaimed.close() }
+                    }
                 }
             }
         }
