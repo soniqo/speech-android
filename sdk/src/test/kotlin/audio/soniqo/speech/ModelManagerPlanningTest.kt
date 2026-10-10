@@ -2,7 +2,12 @@ package audio.soniqo.speech
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.runBlocking
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okio.Buffer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -11,6 +16,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
 import java.io.RandomAccessFile
+import java.util.concurrent.TimeUnit
 
 /**
  * Coverage for [ModelManager.plannedModelBytes] / [ModelManager.plannedLlmBytes],
@@ -50,8 +56,8 @@ class ModelManagerPlanningTest {
     @Test
     fun `fresh install plans the whole default manifest`() {
         val pipeline = ModelManager.plannedModelBytes(context)
-        // Published INT8 Parakeet-EOU + Kokoro set is ~493 MB.
-        assertTrue("expected ~493 MB, got $pipeline", pipeline in 480_000_000..505_000_000)
+        // Published INT8 Parakeet-EOU + Kokoro + DeepFilter set is ~502 MB.
+        assertTrue("expected ~502 MB, got $pipeline", pipeline in 480_000_000..505_000_000)
     }
 
     @Test
@@ -99,6 +105,56 @@ class ModelManagerPlanningTest {
 
     @Test
     fun `a fully cached model set plans nothing`() {
+        cacheDefaultSet()
+        writeValid(modelDir, "deepfilter.onnx", 8_608_859)
+
+        assertEquals(0L, ModelManager.plannedModelBytes(context))
+        assertTrue(ModelManager.areModelsReady(context))
+    }
+
+    @Test
+    fun `existing cache only needs the streaming enhancer weights`() {
+        cacheDefaultSet()
+        writeValid(modelDir, "deepfilter-auxiliary.bin", 126_976)
+
+        assertEquals(8_608_859L, ModelManager.plannedModelBytes(context))
+        assertFalse(ModelManager.areModelsReady(context))
+        assertEquals(0L, ModelManager.plannedModelBytes(context, enableEnhancer = false))
+        assertTrue(ModelManager.areModelsReady(context, enableEnhancer = false))
+    }
+
+    @Test
+    fun `upgrading an existing cache downloads only the pinned enhancer`() = runBlocking {
+        cacheDefaultSet()
+        val cachedEncoder = File(modelDir, "parakeet-eou-encoder.onnx")
+        val modified = cachedEncoder.lastModified()
+        val endpoint = ModelManager.endpoint
+        val server = MockWebServer()
+        server.start()
+        try {
+            // Validity, not inference, is exercised here. Sparse cache files
+            // and a protobuf header keep this test independent of real models.
+            val body = ByteArray(8_608_859).apply { this[0] = 0x08 }
+            server.enqueue(MockResponse().setBody(Buffer().write(body)))
+            ModelManager.endpoint = server.url("/").toString().trimEnd('/')
+
+            assertEquals(modelDir.path, ModelManager.ensureModels(context))
+            assertTrue(ModelManager.areModelsReady(context))
+            assertEquals(1, server.requestCount)
+            assertEquals(
+                "/soniqo/DeepFilterNet3-ONNX/resolve/" +
+                    "63d8ba442ba900143c468b798e94a04009b2f0c9/deepfilter.onnx",
+                server.takeRequest(1, TimeUnit.SECONDS)!!.path,
+            )
+            assertEquals(131_741_896L, cachedEncoder.length())
+            assertEquals(modified, cachedEncoder.lastModified())
+        } finally {
+            ModelManager.endpoint = endpoint
+            server.shutdown()
+        }
+    }
+
+    private fun cacheDefaultSet() {
         modelDir.mkdirs()
         // Sparse extents keep the 325 MB and 132 MB blobs off the disk.
         writeValid(modelDir, "silero-vad.onnx", 2_243_022)
@@ -118,11 +174,7 @@ class ModelManagerPlanningTest {
             "af_heart", "ff_siwis", "ef_dora", "if_sara",
             "pf_dora", "hf_alpha", "jf_alpha", "zf_xiaobei",
         ).forEach { writeValid(modelDir, "voices/$it.bin", 1_024) }
-        writeValid(modelDir, "deepfilter-auxiliary.bin", 126_976)
         writeCurrentMarkers(modelDir)
-
-        assertEquals(0L, ModelManager.plannedModelBytes(context))
-        assertTrue(ModelManager.areModelsReady(context))
     }
 
     @Test

@@ -37,10 +37,12 @@ Android के लिए ऑन-डिवाइस स्पीच SDK, [ONNX Ru
 | [Silero VAD v5](https://soniqo.audio/hi/guides/vad/android) | वॉयस एक्टिविटी डिटेक्शन | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | कोई भी |
 | [Sortformer 4-स्पीकर](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | स्ट्रीमिंग स्पीकर डायराइज़ेशन (वैकल्पिक) | [475 MB](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | अभी मापा नहीं गया | कोई भी |
 | [ReDimNet2-B6](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | स्पीकर एम्बेडिंग (वैकल्पिक) | [51 MB](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | अभी मापा नहीं गया | कोई भी |
-| [DeepFilterNet3](https://soniqo.audio/hi/guides/denoise/android) | शोर रद्दीकरण | [~8 MB](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | डिफ़ॉल्ट रूप से लोड नहीं | कोई भी |
+| [DeepFilterNet3](https://soniqo.audio/hi/guides/denoise/android) | स्ट्रीमिंग शोर रद्दीकरण (डिफ़ॉल्ट) | [8.2 MiB](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | अभी मापा नहीं गया | कोई भी |
 | [FunctionGemma 270M](https://soniqo.audio/hi/guides/function-calls) | ऑन-डिवाइस LLM — संरचित फ़ंक्शन / टूल कॉल | [283 MB](https://huggingface.co/soniqo/FunctionGemma-270M-LiteRT-LM) | ऐप runtime पर निर्भर | EN-tuned |
 
 मॉडल पहले लॉन्च पर `ModelManager.ensureModels()` के माध्यम से स्वचालित रूप से डाउनलोड होते हैं।
+
+DeepFilterNet3, `SpeechConfig.enableEnhancer` के ज़रिए डिफ़ॉल्ट रूप से सक्षम है। यह ऑडियो पैकेटों के बीच न्यूरल नेटवर्क और DSP की स्थिति बनाए रखता है तथा VAD/STT से पहले CPU पर 16↔48 kHz री-सैंपलिंग और शोर हटाने का काम करता है। मॉडल की 40 ms देरी के साथ री-सैंपलिंग की देरी भी जुड़ती है। इसे बंद करने के लिए `SpeechConfig` और `ModelManager.ensureModels()` (या `ModelDownloadWorker.enqueue()`) दोनों में `enableEnhancer = false` सेट करें। मौजूदा वैध कैश केवल निश्चित रिविज़न के `deepfilter.onnx` वज़न (8.2 MiB) डाउनलोड करते हैं; पुरानी सहायक फ़ाइल की अब ज़रूरत नहीं है।
 
 `SpeechConfig()` डिफ़ॉल्ट रूप से `SttModel.PARAKEET_EOU` और `TtsModel.KOKORO_SHORT_TURN` इस्तेमाल करता है, ताकि SDK इंटीग्रेशन और सिस्टम रिकग्नाइज़र कम-मेमोरी Android पथ पर रहें। डेमो ऐप `SttModel.PARAKEET` चुनता है, इसलिए इको और डिक्टेशन स्क्रीन 25 यूरोपीय भाषाओं वाले बड़े TDT मॉडल का उपयोग करती हैं।
 

@@ -43,7 +43,7 @@ class DownloadProgressTest {
         Sized("voices/hf_alpha.bin", 1_024),
         Sized("voices/jf_alpha.bin", 1_024),
         Sized("voices/zf_xiaobei.bin", 1_024),
-        Sized("deepfilter-auxiliary.bin", 2 * MB),
+        Sized("deepfilter.onnx", 8_608_859),
     )
     private val totalFiles = manifest.size
 

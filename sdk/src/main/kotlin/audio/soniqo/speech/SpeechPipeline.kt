@@ -174,6 +174,7 @@ internal class SpeechPipelineImpl(config: SpeechConfig) : SpeechPipeline {
         config.enableSmartTurn,
         config.turnCompletionThreshold,
         config.turnCompletionMaxSilenceSec,
+        config.enableEnhancer,
     ).also { h ->
         if (h == 0L) throw IllegalStateException(
             "Failed to create native pipeline. Models may be corrupt — " +

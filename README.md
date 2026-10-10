@@ -37,10 +37,18 @@ This repo is the **Android packaging**: Kotlin SDK, JNI bridge, demo app. The C+
 | [Silero VAD v5](https://soniqo.audio/guides/vad/android) | Voice activity detection | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | Any |
 | [Sortformer 4-speaker](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | Streaming speaker diarization (optional) | [475 MB](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | not yet measured | Any |
 | [ReDimNet2-B6](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | Speaker embeddings (optional) | [51 MB](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | not yet measured | Any |
-| [DeepFilterNet3](https://soniqo.audio/guides/denoise/android) | Noise cancellation | [~8 MB](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | not loaded by default | Any |
+| [DeepFilterNet3](https://soniqo.audio/guides/denoise/android) | Streaming noise cancellation (default) | [8.2 MiB](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | not yet measured | Any |
 | [FunctionGemma 270M](https://soniqo.audio/guides/function-calls) | On-device LLM — structured function / tool calls | [283 MB](https://huggingface.co/soniqo/FunctionGemma-270M-LiteRT-LM) | app-runtime dependent | EN-tuned |
 
 Models are downloaded automatically on first launch via `ModelManager.ensureModels()`.
+
+DeepFilterNet3 is enabled by default via `SpeechConfig.enableEnhancer`. It keeps
+neural and DSP history between capture packets and resamples 16↔48 kHz before
+VAD/STT on CPU, adding 40 ms of model delay plus resampling latency. To bypass
+denoising, set `enableEnhancer = false` in both `SpeechConfig` and
+`ModelManager.ensureModels()` (or `ModelDownloadWorker.enqueue()`). Existing
+valid caches download only the pinned `deepfilter.onnx` weights (8.2 MiB);
+the legacy auxiliary file is no longer needed.
 
 `SpeechConfig()` defaults to `SttModel.PARAKEET_EOU` and `TtsModel.KOKORO_SHORT_TURN`
 to keep SDK integrations and the system recognizer on the low-memory Android

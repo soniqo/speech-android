@@ -91,6 +91,7 @@ class ModelDownloadWorker(
         val includeLlm = inputData.getBoolean(KEY_INCLUDE_LLM, false)
         val supertonicLatentBuckets = inputData.getBoolean(KEY_SUPERTONIC_LATENT_BUCKETS, false)
         val enableSmartTurn = inputData.getBoolean(KEY_ENABLE_SMART_TURN, false)
+        val enableEnhancer = inputData.getBoolean(KEY_ENABLE_ENHANCER, true)
         val includePipeline = inputData.getBoolean(KEY_INCLUDE_PIPELINE, true)
         val includeVad = inputData.getBoolean(KEY_INCLUDE_VAD, false)
         val includeTranscriber = inputData.getBoolean(KEY_INCLUDE_TRANSCRIBER, false)
@@ -114,7 +115,8 @@ class ModelDownloadWorker(
             if (includePipeline) {
                 add(Phase(
                     plannedBytes = ModelManager.plannedModelBytes(
-                        context, precision, sttModel, sttBackend, ttsModel, enableSmartTurn,
+                        context, precision, sttModel, sttBackend, ttsModel,
+                        enableSmartTurn, enableEnhancer,
                     ),
                     outputKey = KEY_MODEL_DIR,
                 ) { report ->
@@ -127,6 +129,7 @@ class ModelDownloadWorker(
                         onProgress = report,
                         supertonicLatentBuckets = supertonicLatentBuckets,
                         enableSmartTurn = enableSmartTurn,
+                        enableEnhancer = enableEnhancer,
                     )
                 })
             }
@@ -390,6 +393,7 @@ class ModelDownloadWorker(
         const val KEY_INCLUDE_LLM = "includeLlm"
         const val KEY_SUPERTONIC_LATENT_BUCKETS = "supertonicLatentBuckets"
         const val KEY_ENABLE_SMART_TURN = "enableSmartTurn"
+        const val KEY_ENABLE_ENHANCER = "enableEnhancer"
         const val KEY_LLM_MODEL = "llmModel"
         /** Download the pipeline set ([ModelManager.ensureModels]); default true. */
         const val KEY_INCLUDE_PIPELINE = "includePipeline"
@@ -454,6 +458,7 @@ class ModelDownloadWorker(
             transcriberPrecision: ModelPrecision = ModelPrecision.INT8,
             includeDiarizer: Boolean = false,
             includeSpeakerEmbedding: Boolean = false,
+            enableEnhancer: Boolean = true,
         ): String {
             val standaloneSets = includeVad || includeTranscriber ||
                 includeDiarizer || includeSpeakerEmbedding
@@ -464,6 +469,7 @@ class ModelDownloadWorker(
                 ttsModel.isKokoro &&
                 !includeLlm &&
                 !enableSmartTurn &&
+                enableEnhancer &&
                 includePipeline &&
                 !standaloneSets
             ) {
@@ -477,8 +483,9 @@ class ModelDownloadWorker(
             }
             val ttsName = if (ttsModel.isKokoro) TtsModel.KOKORO.name else ttsModel.name
             val smartTurn = if (enableSmartTurn) ".smartTurn" else ""
+            val enhancer = if (enableEnhancer) "" else ".noEnhancer"
             val pipeline = if (includePipeline) {
-                ".${precision.name}.${sttModel.name}.${sttBackend.name}.$ttsName$buckets$smartTurn"
+                ".${precision.name}.${sttModel.name}.${sttBackend.name}.$ttsName$buckets$smartTurn$enhancer"
             } else {
                 ".noPipeline"
             }
@@ -509,6 +516,7 @@ class ModelDownloadWorker(
             transcriberPrecision: ModelPrecision = ModelPrecision.INT8,
             includeDiarizer: Boolean = false,
             includeSpeakerEmbedding: Boolean = false,
+            enableEnhancer: Boolean = true,
         ) =
             OneTimeWorkRequestBuilder<ModelDownloadWorker>()
                 .setInputData(workDataOf(
@@ -520,6 +528,7 @@ class ModelDownloadWorker(
                     KEY_LLM_MODEL to llmModel.name,
                     KEY_SUPERTONIC_LATENT_BUCKETS to supertonicLatentBuckets,
                     KEY_ENABLE_SMART_TURN to enableSmartTurn,
+                    KEY_ENABLE_ENHANCER to enableEnhancer,
                     KEY_INCLUDE_PIPELINE to includePipeline,
                     KEY_INCLUDE_VAD to includeVad,
                     KEY_INCLUDE_TRANSCRIBER to includeTranscriber,
@@ -552,6 +561,7 @@ class ModelDownloadWorker(
             transcriberPrecision: ModelPrecision = ModelPrecision.INT8,
             includeDiarizer: Boolean = false,
             includeSpeakerEmbedding: Boolean = false,
+            enableEnhancer: Boolean = true,
         ): java.util.UUID {
             val req = request(
                 precision = precision,
@@ -562,6 +572,7 @@ class ModelDownloadWorker(
                 llmModel = llmModel,
                 supertonicLatentBuckets = supertonicLatentBuckets,
                 enableSmartTurn = enableSmartTurn,
+                enableEnhancer = enableEnhancer,
                 includePipeline = includePipeline,
                 includeVad = includeVad,
                 includeTranscriber = includeTranscriber,
@@ -580,6 +591,7 @@ class ModelDownloadWorker(
                     llmModel = llmModel,
                     supertonicLatentBuckets = supertonicLatentBuckets,
                     enableSmartTurn = enableSmartTurn,
+                    enableEnhancer = enableEnhancer,
                     includePipeline = includePipeline,
                     includeVad = includeVad,
                     includeTranscriber = includeTranscriber,

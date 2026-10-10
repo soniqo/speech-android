@@ -37,10 +37,12 @@
 | [Silero VAD v5](https://soniqo.audio/ja/guides/vad/android) | 音声活動検出 | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | 任意 |
 | [Sortformer 4 話者](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | ストリーミング話者分離(任意) | [475 MB](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | 未計測 | 任意 |
 | [ReDimNet2-B6](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | 話者埋め込み(任意) | [51 MB](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | 未計測 | 任意 |
-| [DeepFilterNet3](https://soniqo.audio/ja/guides/denoise/android) | ノイズキャンセリング | [~8 MB](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | 既定では未ロード | 任意 |
+| [DeepFilterNet3](https://soniqo.audio/ja/guides/denoise/android) | ストリーミングノイズ除去（既定） | [8.2 MiB](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | 未計測 | 任意 |
 | [FunctionGemma 270M](https://soniqo.audio/ja/guides/function-calls) | オンデバイス LLM — 構造化関数 / ツール呼び出し | [283 MB](https://huggingface.co/soniqo/FunctionGemma-270M-LiteRT-LM) | アプリのランタイム次第 | EN チューニング |
 
 モデルは初回起動時に `ModelManager.ensureModels()` 経由で自動ダウンロードされます。
+
+DeepFilterNet3 は `SpeechConfig.enableEnhancer` により既定で有効です。音声パケット間でニューラルネットワークと DSP の状態を保持し、CPU 上で 16↔48 kHz のリサンプリングとノイズ除去を行ってから VAD/STT に渡します。モデルの遅延 40 ms にリサンプリングの遅延が加わります。無効にするには、`SpeechConfig` と `ModelManager.ensureModels()`（または `ModelDownloadWorker.enqueue()`）の両方で `enableEnhancer = false` を設定してください。有効な既存キャッシュには、固定リビジョンの `deepfilter.onnx` 重み（8.2 MiB）のみ追加でダウンロードされ、従来の補助ファイルは不要です。
 
 `SpeechConfig()` は `SttModel.PARAKEET_EOU` と `TtsModel.KOKORO_SHORT_TURN` を既定にして、SDK 組み込みとシステム認識サービスを低メモリ Android パスで動かします。デモアプリは `SttModel.PARAKEET` を選択し、エコー画面とディクテーション画面でヨーロッパの 25 言語に対応する、より大きな TDT モデルを使います。
 

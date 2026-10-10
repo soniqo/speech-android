@@ -36,6 +36,8 @@ object ModelManager {
     private const val NEMOTRON_LITERT_FP16_REVISION =
         "1503a9a1eb75b813b83ba65bf5e9fecea4a46091"
     private const val SMART_TURN_REVISION = "b48fdbe20772bcec1fef02f4a1a355236ef6359e"
+    // Core derives the stateful graph from this exact published FP32 file.
+    private const val DEEPFILTER_REVISION = "63d8ba442ba900143c468b798e94a04009b2f0c9"
     // Both wrappers read their geometry out of these bundles, so each is
     // pinned to the commit it was validated against: a re-export must not
     // reach an installed SDK unannounced.
@@ -91,6 +93,7 @@ object ModelManager {
         ttsModel: TtsModel = TtsModel.KOKORO_SHORT_TURN,
         supertonicLatentBuckets: Boolean = false,
         enableSmartTurn: Boolean = false,
+        enableEnhancer: Boolean = true,
     ): List<ModelFile> {
         val suffix = if (precision == ModelPrecision.INT8) "-int8" else ""
         val files = vadModels().toMutableList()
@@ -147,8 +150,9 @@ object ModelManager {
 
         files += ttsModels(ttsModel, supertonicLatentBuckets)
 
-        // Noise cancellation
-        files += ModelFile("DeepFilterNet3-ONNX", "deepfilter-auxiliary.bin")
+        if (enableEnhancer) {
+            files += ModelFile("DeepFilterNet3-ONNX", "deepfilter.onnx", DEEPFILTER_REVISION)
+        }
         if (enableSmartTurn) {
             files += smartTurnModels()
         }
@@ -370,6 +374,7 @@ object ModelManager {
         ttsModel: TtsModel = TtsModel.KOKORO_SHORT_TURN,
         supertonicLatentBuckets: Boolean = false,
         enableSmartTurn: Boolean = false,
+        enableEnhancer: Boolean = true,
     ): Boolean {
         val dir = modelDirFile(context, precision, sttModel, sttBackend, ttsModel)
         if (!dir.exists()) return false
@@ -381,7 +386,7 @@ object ModelManager {
 
         val fileList = models(
             precision, sttModel, sttBackend, ttsModel,
-            supertonicLatentBuckets, enableSmartTurn,
+            supertonicLatentBuckets, enableSmartTurn, enableEnhancer,
         )
         val allFiles = if (precision == ModelPrecision.FP32 && sttModel == SttModel.PARAKEET) {
             fileList + ModelFile("Parakeet-TDT-0.6B-ONNX", "parakeet-encoder.onnx.data")
@@ -513,6 +518,7 @@ object ModelManager {
         onProgress: ((Progress) -> Unit)? = null,
         supertonicLatentBuckets: Boolean = false,
         enableSmartTurn: Boolean = false,
+        enableEnhancer: Boolean = true,
     ): String = withContext(Dispatchers.IO) {
         val dir = modelDirFile(context, precision, sttModel, sttBackend, ttsModel)
         dir.mkdirs()
@@ -533,7 +539,7 @@ object ModelManager {
 
         val fileList = models(
             precision, sttModel, sttBackend, ttsModel,
-            supertonicLatentBuckets, enableSmartTurn,
+            supertonicLatentBuckets, enableSmartTurn, enableEnhancer,
         )
         // FP32 Parakeet encoder needs the external data file.
         val allFiles = if (precision == ModelPrecision.FP32 && sttModel == SttModel.PARAKEET) {
@@ -930,6 +936,7 @@ object ModelManager {
         sttBackend: SttBackend = SttBackend.ONNX,
         ttsModel: TtsModel = TtsModel.KOKORO_SHORT_TURN,
         enableSmartTurn: Boolean = false,
+        enableEnhancer: Boolean = true,
     ): Long {
         val dir = modelDirFile(context, precision, sttModel, sttBackend, ttsModel)
         val stale = cacheIsStale(dir, modelSetKey(precision, sttModel, sttBackend, ttsModel))
@@ -938,6 +945,7 @@ object ModelManager {
             models(
                 precision, sttModel, sttBackend, ttsModel,
                 enableSmartTurn = enableSmartTurn,
+                enableEnhancer = enableEnhancer,
             ),
             stale,
         )
@@ -1297,7 +1305,7 @@ object ModelManager {
         "us_silver.json" to 3_099_517L,
         "dict_fr.json" to 51_497L,
         "dict_pt.json" to 37_438L,
-        "deepfilter-auxiliary.bin" to 126_976L,
+        "deepfilter.onnx" to 8_608_859L,
         "model.litertlm" to 297_212_528L,
         "model-lora16-android.litertlm" to 327_438_928L,
         "control-r4-rank16.tflite" to 9_502_720L,
@@ -1352,6 +1360,7 @@ object ModelManager {
 
     /** Minimum expected sizes for key model files. */
     private val MIN_SIZES = mapOf(
+        "deepfilter.onnx" to 8_608_859L,
         "parakeet-encoder-int8.onnx" to 100_000_000L,   // ~840 MB
         "parakeet-decoder-joint-int8.onnx" to 10_000_000L, // ~51 MB
         "parakeet-eou-encoder.onnx" to 100_000_000L,    // ~132 MB

@@ -37,10 +37,12 @@
 | [Silero VAD v5](https://soniqo.audio/ru/guides/vad/android) | Определение голосовой активности | [2 МБ](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 МБ | Любой |
 | [Sortformer, 4 диктора](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | Потоковая диаризация дикторов (опционально) | [475 МБ](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | ещё не измерено | Любой |
 | [ReDimNet2-B6](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | Эмбеддинги дикторов (опционально) | [51 МБ](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | ещё не измерено | Любой |
-| [DeepFilterNet3](https://soniqo.audio/ru/guides/denoise/android) | Шумоподавление | [~8 МБ](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | по умолчанию не загружается | Любой |
+| [DeepFilterNet3](https://soniqo.audio/ru/guides/denoise/android) | Потоковое шумоподавление (по умолчанию) | [8.2 МиБ](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | ещё не измерено | Любой |
 | [FunctionGemma 270M](https://soniqo.audio/ru/guides/function-calls) | Локальная LLM — структурированные вызовы функций / инструментов | [283 МБ](https://huggingface.co/soniqo/FunctionGemma-270M-LiteRT-LM) | зависит от runtime приложения | EN-tuned |
 
 Модели загружаются автоматически при первом запуске через `ModelManager.ensureModels()`.
+
+DeepFilterNet3 включён по умолчанию через `SpeechConfig.enableEnhancer`. Он сохраняет состояние нейросети и DSP между пакетами аудио и выполняет пересэмплирование 16↔48 кГц и шумоподавление на CPU перед VAD/STT. Задержка модели составляет 40 мс плюс задержка пересэмплирования. Для отключения задайте `enableEnhancer = false` в `SpeechConfig` и в `ModelManager.ensureModels()` (или `ModelDownloadWorker.enqueue()`). В существующий корректный кеш скачиваются только веса `deepfilter.onnx`, закреплённые за ревизией (8.2 МиБ); старый вспомогательный файл больше не нужен.
 
 `SpeechConfig()` по умолчанию использует `SttModel.PARAKEET_EOU` и `TtsModel.KOKORO_SHORT_TURN`, чтобы интеграции SDK и системный распознаватель работали по низкопамятному Android-пути. Демо-приложение выбирает `SttModel.PARAKEET`, поэтому экраны эха и диктовки используют более крупную TDT-модель для 25 европейских языков.
 

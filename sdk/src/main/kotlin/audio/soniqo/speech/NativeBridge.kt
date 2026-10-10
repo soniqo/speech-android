@@ -32,6 +32,7 @@ internal object NativeBridge {
         enableSmartTurn: Boolean,      // attach Smart Turn v3.2 after VAD pauses
         turnCompletionThreshold: Float,
         turnCompletionMaxSilenceSec: Float,
+        enableEnhancer: Boolean,
     ): Long
 
     external fun nativeNnapiFallbackReason(): String?
