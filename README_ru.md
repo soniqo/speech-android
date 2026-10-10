@@ -76,7 +76,7 @@ Kokoro и Supertonic принимают пресет голоса на кажд�
 
 ```kotlin
 dependencies {
-    implementation("audio.soniqo:speech:0.0.23")
+    implementation("audio.soniqo:speech:0.0.24")
 }
 ```
 

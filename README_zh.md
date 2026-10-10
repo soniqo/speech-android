@@ -76,7 +76,7 @@ Kokoro 与 Supertonic 都支持在直接合成时按调用指定音色预设 —
 
 ```kotlin
 dependencies {
-    implementation("audio.soniqo:speech:0.0.23")
+    implementation("audio.soniqo:speech:0.0.24")
 }
 ```
 
