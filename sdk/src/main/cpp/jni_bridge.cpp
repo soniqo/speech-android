@@ -437,7 +437,7 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
     jboolean emitPartialTranscriptions, jfloat partialTranscriptionInterval,
     jfloat endOfSpeechSilenceSec, jint beamSize,
     jboolean enableSmartTurn, jfloat turnCompletionThreshold,
-    jfloat turnCompletionMaxSilenceSec)
+    jfloat turnCompletionMaxSilenceSec, jboolean enableEnhancer)
 {
     auto dir = jstring_to_string(env, modelDir);
     bool nnapi = useNnapi;
@@ -456,6 +456,16 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
         "(ILjava/lang/String;[BFFF)V");
 
     try {
+        if (enableEnhancer) {
+            h->enhancer = std::make_unique<speech_core::DeepFilterEnhancer>(
+                dir + "/deepfilter.onnx", "", /*hw_accel=*/false);
+            // Validate the streaming graph/runtime before capture starts, so
+            // a mismatched export fails in this constructor's JNI guard.
+            std::vector<float> warmup(480, 0.0f);
+            h->enhancer->enhance_stream(warmup.data(), warmup.size(), 48000, warmup.data());
+            h->enhancer->reset();
+            LOGI("DeepFilterNet3 streaming enabled (CPU, 40 ms model delay)");
+        }
         // Load models
         h->vad = std::make_unique<speech_core::SileroVad>(
             dir + "/silero-vad.onnx", /*hw_accel=*/false);
@@ -571,16 +581,11 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
             ? speech_core::AgentConfig::Mode::TranscribeOnly
             : speech_core::AgentConfig::Mode::Echo;
 
-        // Note: DeepFilterNet3 noise cancellation is disabled in the pipeline.
-        // DFN operates at 48 kHz but the pipeline pushes 16 kHz audio —
-        // running DFN without resampling produces artifacts. Needs a
-        // 16k→48k→DFN→48k→16k resample chain before it can be re-enabled.
-        // See issue #12. The model is still downloaded for future use.
-
         PipelineHandle* raw = h.get();
         h->pipeline = std::make_unique<speech_core::VoicePipeline>(
             *h->stt, *h->tts, /*llm=*/nullptr, *h->vad, cfg,
-            [raw](const speech_core::PipelineEvent& e) { dispatch_event(raw, e); });
+            [raw](const speech_core::PipelineEvent& e) { dispatch_event(raw, e); },
+            h->enhancer.get());
         if (h->smart_turn) {
             h->pipeline->set_turn_completion(h->smart_turn.get());
         }
@@ -660,8 +665,20 @@ Java_audio_soniqo_speech_NativeBridge_nativePushAudio(
     auto* h = reinterpret_cast<PipelineHandle*>(handle);
     if (!h || !h->pipeline) return;
 
+    if (!samples || count < 0 || count > env->GetArrayLength(samples)) {
+        throw_java(env, "java/lang/IllegalArgumentException", "Invalid audio sample count");
+        return;
+    }
+    if (count == 0) return;
     float* data = env->GetFloatArrayElements(samples, nullptr);
-    h->pipeline->push_audio(data, static_cast<size_t>(count));
+    if (!data) return;
+    try {
+        h->pipeline->push_audio(data, static_cast<size_t>(count));
+    } catch (const std::exception& e) {
+        env->ReleaseFloatArrayElements(samples, data, JNI_ABORT);
+        throw_native_failure(env, "Audio processing failed", e);
+        return;
+    }
     env->ReleaseFloatArrayElements(samples, data, JNI_ABORT);
 }
 

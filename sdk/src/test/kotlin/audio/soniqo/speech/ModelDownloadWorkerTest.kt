@@ -46,7 +46,7 @@ class ModelDownloadWorkerTest {
     @Test
     fun `success returns model dir in output data`() = runBlocking {
         coEvery {
-            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any())
+            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any(), any())
         } returns "/fake/model/dir"
 
         val worker = TestListenableWorkerBuilder<ModelDownloadWorker>(context)
@@ -65,7 +65,7 @@ class ModelDownloadWorkerTest {
         // Transient network/disk failures go back to WorkManager so it
         // reschedules with exponential backoff.
         coEvery {
-            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any())
+            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any(), any())
         } throws IOException("network down")
 
         val worker = TestListenableWorkerBuilder<ModelDownloadWorker>(context).build()
@@ -79,7 +79,7 @@ class ModelDownloadWorkerTest {
         // Non-IO exceptions are not transient — Failure carries the message so
         // the host activity can surface it.
         coEvery {
-            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any())
+            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any(), any())
         } throws IllegalStateException("models corrupt")
 
         val worker = TestListenableWorkerBuilder<ModelDownloadWorker>(context).build()
@@ -93,7 +93,7 @@ class ModelDownloadWorkerTest {
     @Test
     fun `missing or invalid inputs fall back to INT8 and short-turn Kokoro`() = runBlocking {
         coEvery {
-            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any())
+            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any(), any())
         } returns "/fake"
 
         TestListenableWorkerBuilder<ModelDownloadWorker>(context).build().doWork()
@@ -112,6 +112,7 @@ class ModelDownloadWorkerTest {
                 any(),
                 false,
                 false,
+                true,
             )
         }
     }
@@ -119,7 +120,7 @@ class ModelDownloadWorkerTest {
     @Test
     fun `model inputs are passed to ModelManager`() = runBlocking {
         coEvery {
-            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any())
+            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any(), any())
         } returns "/fake"
 
         val worker = TestListenableWorkerBuilder<ModelDownloadWorker>(context)
@@ -143,6 +144,7 @@ class ModelDownloadWorkerTest {
                 any(),
                 false,
                 false,
+                true,
             )
         }
     }
@@ -150,7 +152,7 @@ class ModelDownloadWorkerTest {
     @Test
     fun `Smart Turn input downloads the optional model`() = runBlocking {
         coEvery {
-            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any())
+            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any(), any())
         } returns "/fake"
 
         val worker = TestListenableWorkerBuilder<ModelDownloadWorker>(context)
@@ -161,7 +163,7 @@ class ModelDownloadWorkerTest {
 
         coVerify(exactly = 1) {
             ModelManager.ensureModels(
-                any(), any(), any(), any(), any(), any(), any(), true,
+                any(), any(), any(), any(), any(), any(), any(), true, true,
             )
         }
     }
@@ -169,7 +171,7 @@ class ModelDownloadWorkerTest {
     @Test
     fun `control lora input downloads selected llm profile`() = runBlocking {
         coEvery {
-            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any())
+            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any(), any())
         } returns "/fake"
         coEvery {
             ModelManager.ensureLlmModels(any(), any(), any())
@@ -192,6 +194,46 @@ class ModelDownloadWorkerTest {
                 any(),
             )
         }
+    }
+
+    @Test
+    fun `enhancer opt out reaches download planning and execution`() = runBlocking {
+        coEvery {
+            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any(), any())
+        } returns "/fake"
+
+        val worker = TestListenableWorkerBuilder<ModelDownloadWorker>(context)
+            .setInputData(workDataOf(ModelDownloadWorker.KEY_ENABLE_ENHANCER to false))
+            .build()
+
+        assertTrue(worker.doWork() is ListenableWorker.Result.Success)
+        coVerify(exactly = 1) {
+            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any(), false)
+            ModelManager.plannedModelBytes(any(), any(), any(), any(), any(), any(), false)
+        }
+    }
+
+    @Test
+    fun `enhancer flag separates pipeline requests and leaves standalone names unchanged`() {
+        assertTrue(
+            ModelDownloadWorker.request().workSpec.input
+                .getBoolean(ModelDownloadWorker.KEY_ENABLE_ENHANCER, false),
+        )
+        assertEquals(
+            false,
+            ModelDownloadWorker.request(enableEnhancer = false).workSpec.input
+                .getBoolean(ModelDownloadWorker.KEY_ENABLE_ENHANCER, true),
+        )
+        assertNotEquals(
+            ModelDownloadWorker.uniqueName(),
+            ModelDownloadWorker.uniqueName(enableEnhancer = false),
+        )
+        assertEquals(
+            ModelDownloadWorker.uniqueName(includePipeline = false, includeVad = true),
+            ModelDownloadWorker.uniqueName(
+                includePipeline = false, includeVad = true, enableEnhancer = false,
+            ),
+        )
     }
 
     @Test

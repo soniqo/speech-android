@@ -68,7 +68,9 @@ data class SpeechConfig(
      *  a language-prompt input. */
     val language: String = "auto",
 
-    /** Enable noise cancellation (DeepFilterNet3). */
+    /** Stream microphone audio through DeepFilterNet3 before VAD/STT. Uses
+     *  CPU inference with persistent 16↔48 kHz resampling and adds 40 ms of
+     *  model delay. [ModelManager.ensureModels] must use the same flag. */
     val enableEnhancer: Boolean = true,
 
     /** Model quantization — INT8 recommended for mobile. */

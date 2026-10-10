@@ -24,8 +24,40 @@ class ModelManagerManifestTest {
         assertEquals(TtsModel.KOKORO_SHORT_TURN, SpeechConfig().ttsModel)
         assertFalse(SpeechConfig().useNnapi)
         assertFalse(SpeechConfig().enableSmartTurn)
+        assertTrue(SpeechConfig().enableEnhancer)
         assertEquals(TtsModel.KOKORO_SHORT_TURN, SpeechSynthesizerConfig().ttsModel)
         assertFalse(SpeechSynthesizerConfig().useNnapi)
+    }
+
+    @Test
+    fun `streaming enhancer uses the exact published FP32 weights`() {
+        val files = ModelManager.models(ModelPrecision.INT8)
+        assertEquals(
+            listOf(ModelManager.ModelFile(
+                "DeepFilterNet3-ONNX", "deepfilter.onnx",
+                "63d8ba442ba900143c468b798e94a04009b2f0c9",
+            )),
+            files.filter { it.repo == "DeepFilterNet3-ONNX" },
+        )
+        assertFalse(
+            ModelManager.models(ModelPrecision.INT8, enableEnhancer = false)
+                .any { it.repo == "DeepFilterNet3-ONNX" },
+        )
+    }
+
+    @Test
+    fun `enhancer weights reject incomplete downloads`() {
+        val dir = Files.createTempDirectory("deepfilter-validation").toFile()
+        try {
+            val model = dir.resolve("deepfilter.onnx")
+            RandomAccessFile(model, "rw").use {
+                it.write(byteArrayOf(0x08, 0x00))
+                it.setLength(8_608_858L)
+            }
+            assertFalse(ModelManager.isValidModel(model, model.name))
+        } finally {
+            dir.deleteRecursively()
+        }
     }
 
     @Test

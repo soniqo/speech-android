@@ -64,7 +64,7 @@ class ModelDownloadWorkerMeetingModelsTest {
         assertEquals("/diarizer", output.getString(ModelDownloadWorker.KEY_DIARIZER_MODEL_DIR))
         assertEquals("/embedding", output.getString(ModelDownloadWorker.KEY_SPEAKER_EMBEDDING_MODEL_DIR))
         coVerify(exactly = 0) {
-            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any())
+            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any(), any())
         }
         coVerify { ModelManager.ensureTranscriberModels(any(), SttBackend.LITERT, ModelPrecision.INT8, any()) }
     }
@@ -88,7 +88,7 @@ class ModelDownloadWorkerMeetingModelsTest {
     @Test
     fun `the pipeline still downloads by default`() = runBlocking {
         coEvery {
-            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any())
+            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any(), any())
         } returns "/pipeline"
 
         val worker = TestListenableWorkerBuilder<ModelDownloadWorker>(context).build()

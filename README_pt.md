@@ -37,10 +37,12 @@ Este repositório é o **empacotamento Android**: SDK Kotlin, ponte JNI, app de 
 | [Silero VAD v5](https://soniqo.audio/pt/guides/vad/android) | Detecção de atividade vocal | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | Qualquer |
 | [Sortformer 4 locutores](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | Diarização de locutores em streaming (opcional) | [475 MB](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | ainda não medido | Qualquer |
 | [ReDimNet2-B6](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | Embeddings de locutor (opcional) | [51 MB](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | ainda não medido | Qualquer |
-| [DeepFilterNet3](https://soniqo.audio/pt/guides/denoise/android) | Cancelamento de ruído | [~8 MB](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | não carregado por padrão | Qualquer |
+| [DeepFilterNet3](https://soniqo.audio/pt/guides/denoise/android) | Cancelamento de ruído em streaming (padrão) | [8.2 MiB](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | ainda não medido | Qualquer |
 | [FunctionGemma 270M](https://soniqo.audio/pt/guides/function-calls) | LLM no dispositivo — chamadas estruturadas de função / ferramenta | [283 MB](https://huggingface.co/soniqo/FunctionGemma-270M-LiteRT-LM) | depende do runtime do app | Ajustado para EN |
 
 Os modelos são baixados automaticamente no primeiro lançamento via `ModelManager.ensureModels()`.
+
+DeepFilterNet3 é ativado por padrão por `SpeechConfig.enableEnhancer`. Ele mantém o estado neural e DSP entre pacotes de áudio e faz reamostragem 16↔48 kHz e redução de ruído na CPU antes de VAD/STT, acrescentando 40 ms de atraso do modelo mais a latência da reamostragem. Para desativar, defina `enableEnhancer = false` em `SpeechConfig` e em `ModelManager.ensureModels()` (ou `ModelDownloadWorker.enqueue()`). Caches válidos existentes baixam apenas os pesos de `deepfilter.onnx` fixados em uma revisão (8.2 MiB); o antigo arquivo auxiliar não é mais necessário.
 
 `SpeechConfig()` usa `SttModel.PARAKEET_EOU` e `TtsModel.KOKORO_SHORT_TURN` por padrão para manter integrações do SDK e o reconhecedor do sistema no caminho Android de baixa memória. O app demo seleciona `SttModel.PARAKEET` para que as telas de eco e ditado usem o modelo TDT maior com 25 idiomas europeus.
 
