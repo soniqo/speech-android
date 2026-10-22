@@ -1344,6 +1344,7 @@ object ModelManager {
         "kokoro-e2e.onnx" to 3_047_254L,
         "kokoro-e2e-realtime.onnx" to 2_413_312L,
         "kokoro-e2e.onnx.data" to 324_564_624L,
+        "vocab_index.json" to 1_822L,
         "smart-turn-v3.2-int8.onnx" to 11_123_370L,
         // Pocket TTS bundle — the Control demo's default TTS, so these matter
         // for its bar; without them the total under-counts by ~126 MB and then
@@ -1470,6 +1471,13 @@ object ModelManager {
             return false
         }
 
+        // Kokoro's embedding is indexed by hexgrad's token ids. The first
+        // Kokoro-82M-ONNX upload shipped a different table, with no
+        // word-boundary token and A (eɪ) at 17, which garbled English. A
+        // cached copy of that table is stale, so only this small file is
+        // fetched again; the weights stay.
+        if (filename == "vocab_index.json" && !isKokoroTokenTable(file)) return false
+
         // Check minimum size for known large files
         (repo?.let { BUNDLE_MIN_SIZES["$it/$filename"] } ?: MIN_SIZES[filename])?.let { minSize ->
             if (file.length() < minSize) return false
@@ -1492,6 +1500,19 @@ object ModelManager {
     }
 
     private const val KOKORO_VOICE_BYTES = 256L * 4L
+
+    /**
+     * True when [file] holds hexgrad's Kokoro token table. The legacy table
+     * has no `ʦ` entry (token 20), so that key marks the right one. JSON may
+     * spell it literally or as a `\u02a6` escape.
+     */
+    private fun isKokoroTokenTable(file: File): Boolean =
+        try {
+            val text = file.readText(Charsets.UTF_8)
+            "\"ʦ\"" in text || text.contains("\"\\u02a6\"", ignoreCase = true)
+        } catch (_: Exception) {
+            false
+        }
 
     private fun LOGI(msg: String) = Log.i("Speech", msg)
 }

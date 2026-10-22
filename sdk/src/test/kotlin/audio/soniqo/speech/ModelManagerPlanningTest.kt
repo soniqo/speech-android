@@ -53,6 +53,11 @@ class ModelManagerPlanningTest {
         }
     }
 
+    /** A cached vocab_index.json in hexgrad's token layout. */
+    private fun writeKokoroVocab(dir: File) {
+        File(dir, "vocab_index.json").writeText(HEXGRAD_VOCAB)
+    }
+
     @Test
     fun `fresh install plans the whole default manifest`() {
         val pipeline = ModelManager.plannedModelBytes(context)
@@ -113,6 +118,45 @@ class ModelManagerPlanningTest {
     }
 
     @Test
+    fun `a cached legacy Kokoro vocab is the only file planned`() {
+        cacheDefaultSet()
+        writeValid(modelDir, "deepfilter.onnx", 8_608_859)
+        File(modelDir, "vocab_index.json").writeText(LEGACY_VOCAB)
+
+        assertEquals(1_822L, ModelManager.plannedModelBytes(context))
+        assertFalse(ModelManager.areModelsReady(context))
+    }
+
+    @Test
+    fun `a cached legacy Kokoro vocab is fetched again without the weights`() = runBlocking {
+        cacheDefaultSet()
+        writeValid(modelDir, "deepfilter.onnx", 8_608_859)
+        File(modelDir, "vocab_index.json").writeText(LEGACY_VOCAB)
+        val weights = File(modelDir, "kokoro-e2e.onnx.data")
+        val modified = weights.lastModified()
+        val endpoint = ModelManager.endpoint
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody(HEXGRAD_VOCAB))
+            ModelManager.endpoint = server.url("/").toString().trimEnd('/')
+
+            assertEquals(modelDir.path, ModelManager.ensureModels(context))
+            assertTrue(ModelManager.areModelsReady(context))
+            assertEquals(1, server.requestCount)
+            assertEquals(
+                "/soniqo/Kokoro-82M-ONNX/resolve/main/vocab_index.json",
+                server.takeRequest(1, TimeUnit.SECONDS)!!.path,
+            )
+            assertEquals(HEXGRAD_VOCAB, File(modelDir, "vocab_index.json").readText())
+            assertEquals(modified, weights.lastModified())
+        } finally {
+            ModelManager.endpoint = endpoint
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun `existing cache only needs the streaming enhancer weights`() {
         cacheDefaultSet()
         writeValid(modelDir, "deepfilter-auxiliary.bin", 126_976)
@@ -166,7 +210,7 @@ class ModelManagerPlanningTest {
         writeValid(modelDir, "kokoro-e2e.onnx", 3_047_254)
         writeValid(modelDir, "kokoro-e2e-realtime.onnx", 2_413_312)
         writeValid(modelDir, "kokoro-e2e.onnx.data", 324_564_624)
-        writeValid(modelDir, "vocab_index.json", 2_501)
+        writeKokoroVocab(modelDir)
         writeValid(modelDir, "us_gold.json", 3_000_469)
         writeValid(modelDir, "us_silver.json", 3_099_517)
         listOf("fr", "es", "it", "pt", "hi").forEach { writeValid(modelDir, "dict_$it.json", 5_000) }
@@ -198,5 +242,13 @@ class ModelManagerPlanningTest {
         // full bundle rather than collapsing to zero.
         File(ModelManager.llmModelDir(context)).mkdirs()
         assertEquals(297_212_528L, ModelManager.plannedLlmBytes(context))
+    }
+
+    private companion object {
+        /** The keys that tell hexgrad's Kokoro token table from the legacy one. */
+        const val HEXGRAD_VOCAB = """{"vocab": {" ": 16, "ʦ": 20, "A": 24}}"""
+
+        /** The first Kokoro-82M-ONNX table: no space, no ʦ, A at 17. */
+        const val LEGACY_VOCAB = """{"vocab": {";": 1, "A": 17, "ʧ": 133}}"""
     }
 }
