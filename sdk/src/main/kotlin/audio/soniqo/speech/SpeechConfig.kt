@@ -88,7 +88,8 @@ data class SpeechConfig(
     /** Language/locale for prompt-conditioned STT models: e.g. "en-US", "fr",
      *  "zh-CN". "auto" lets the model decide. Parakeet TDT and Parakeet-EOU
      *  always autodetect and reject a concrete value because neither model has
-     *  a language-prompt input. */
+     *  a language-prompt input. Canary transcribes in this language (en, de,
+     *  es or fr); it does not translate. */
     val language: String = "auto",
 
     /** Stream microphone audio through DeepFilterNet3 before VAD/STT. Uses

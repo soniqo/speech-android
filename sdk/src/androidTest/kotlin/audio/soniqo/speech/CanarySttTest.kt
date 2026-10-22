@@ -3,6 +3,7 @@ package audio.soniqo.speech
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -117,6 +118,62 @@ class CanarySttTest {
                 "Expected at least 2 of $expectedWords in '$text', matched $matched",
                 matched >= 2
             )
+        } finally {
+            pipeline.stop()
+            pipeline.close()
+        }
+    }
+
+    /**
+     * German Kokoro pack -> Canary (de). KokoroMultilingualTest only checks
+     * that the pack produces audio; this checks that the words survive, and
+     * that Canary transcribes German rather than translating it to English
+     * (it did while the bridge set only the source language).
+     */
+    @Test
+    fun sttTranscribesSynthesizedGerman() = runBlocking {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val germanDir = ModelManager.ensureTtsModels(
+            ctx, TtsModel.KOKORO_SHORT_TURN, kokoroPack = KokoroPack.GERMAN_MARTIN,
+        )
+        val audio = SpeechSynthesizer(
+            SpeechSynthesizerConfig(modelDir = germanDir, useNnapi = false)
+        ).use {
+            val spoken = it.synthesize("Guten Tag! Die Bücher liegen z.B. auf dem großen Tisch.", "de")
+            pcm16ToFloat16k(spoken.pcm16, spoken.sampleRate)
+        }
+
+        val text = transcribe(canaryConfig("de"), audio).text.lowercase()
+        val expectedWords = listOf("guten", "tag", "bücher", "liegen", "großen", "tisch")
+        val matched = expectedWords.count { it in text }
+        assertTrue(
+            "Expected at least 5 of $expectedWords in '$text', matched $matched",
+            matched >= 5
+        )
+    }
+
+    /** Pushes [audio] and one second of silence, which closes the turn Canary decodes. */
+    private suspend fun transcribe(config: SpeechConfig, audio: FloatArray): SpeechEvent.TranscriptionCompleted {
+        val pipeline = SpeechPipeline(config)
+        try {
+            pipeline.start()
+            return coroutineScope {
+                val event = async {
+                    withTimeout(60_000) {
+                        pipeline.events.first { it is SpeechEvent.TranscriptionCompleted }
+                    }
+                }
+                for (offset in audio.indices step 512) {
+                    pipeline.pushAudio(audio.sliceArray(offset until minOf(offset + 512, audio.size)))
+                    delay(32) // 512 samples @ 16 kHz = 32 ms
+                }
+                val silence = FloatArray(16000)
+                for (offset in silence.indices step 512) {
+                    pipeline.pushAudio(silence.sliceArray(offset until minOf(offset + 512, silence.size)))
+                    delay(32)
+                }
+                event.await() as SpeechEvent.TranscriptionCompleted
+            }
         } finally {
             pipeline.stop()
             pipeline.close()
