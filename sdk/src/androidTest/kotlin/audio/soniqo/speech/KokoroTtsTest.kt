@@ -2,6 +2,9 @@ package audio.soniqo.speech
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.first
@@ -9,6 +12,8 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * E2E test: Kokoro 82M TTS synthesis on device.
@@ -18,6 +23,7 @@ import org.junit.runner.RunWith
  * - Synthesis produces non-empty audio
  * - Audio output event is emitted
  * - Output is valid PCM at 24 kHz
+ * - English output is intelligible to the bundled STT
  */
 @RunWith(AndroidJUnit4::class)
 class KokoroTtsTest {
@@ -196,5 +202,79 @@ class KokoroTtsTest {
 
         pipeline.stop()
         pipeline.close()
+    }
+
+    /**
+     * Kokoro -> Parakeet round trip. Checking for non-empty PCM let a wrong
+     * token table ship: English came out garbled while every other assertion
+     * in this class passed.
+     */
+    @Test
+    fun englishSynthesisRoundTripsThroughStt() = runBlocking {
+        val sentence = "Today is a great day to make a cake and play games."
+        val synthesizer = SpeechSynthesizer(SpeechSynthesizerConfig(modelDir = modelDir, useNnapi = false))
+        val speech = try {
+            synthesizer.synthesize(sentence, "en")
+        } finally {
+            synthesizer.close()
+        }
+        assertEquals(24_000, speech.sampleRate)
+
+        SpeechPipeline(
+            SpeechConfig(
+                modelDir = modelDir,
+                useNnapi = false,
+                enableEnhancer = false,
+                pipelineMode = PipelineMode.TRANSCRIBE_ONLY,
+                endOfSpeechSilenceSec = 1.2f,
+            )
+        ).use { pipeline ->
+            pipeline.start()
+            val transcript = transcribe(pipeline, downsample24kTo16k(speech.pcm16))
+            val expected = MeetingFixtures.words(sentence)
+            val heard = MeetingFixtures.words(transcript)
+            val recognized = expected.count { it in heard }
+            assertTrue(
+                "English synthesis should be intelligible, STT heard \"$transcript\"",
+                recognized >= expected.size * 0.8,
+            )
+        }
+    }
+
+    private suspend fun transcribe(pipeline: SpeechPipeline, audio: FloatArray): String =
+        coroutineScope {
+            val result = async(start = CoroutineStart.UNDISPATCHED) {
+                withTimeout(60_000) {
+                    pipeline.events.first {
+                        it is SpeechEvent.TranscriptionCompleted || it is SpeechEvent.Error
+                    }
+                }
+            }
+            val input = FloatArray(16_000) + audio + FloatArray(32_000)
+            for (offset in input.indices step 512) {
+                pipeline.pushAudio(input.copyOfRange(offset, minOf(offset + 512, input.size)))
+            }
+            when (val event = result.await()) {
+                is SpeechEvent.TranscriptionCompleted -> event.text
+                is SpeechEvent.Error -> error(event.message)
+                else -> error("unexpected event: $event")
+            }
+        }
+
+    /** 16-bit PCM at 24 kHz to float at 16 kHz: a light low-pass, then linear interpolation. */
+    private fun downsample24kTo16k(pcm16: ByteArray): FloatArray {
+        val buffer = ByteBuffer.wrap(pcm16).order(ByteOrder.LITTLE_ENDIAN)
+        val src = FloatArray(pcm16.size / 2) { buffer.getShort(it * 2) / 32768f }
+        if (src.isEmpty()) return src
+        val last = src.size - 1
+        val smooth = FloatArray(src.size) { i ->
+            0.25f * src[maxOf(i - 1, 0)] + 0.5f * src[i] + 0.25f * src[minOf(i + 1, last)]
+        }
+        return FloatArray(src.size * 2 / 3) { i ->
+            val position = i * 1.5f
+            val j = position.toInt()
+            val frac = position - j
+            smooth[j] * (1f - frac) + smooth[minOf(j + 1, last)] * frac
+        }
     }
 }

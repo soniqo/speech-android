@@ -201,6 +201,28 @@ class ModelManagerManifestTest {
     }
 
     @Test
+    fun `Kokoro vocab must be hexgrad's token table`() {
+        val dir = Files.createTempDirectory("kokoro-vocab-validation").toFile()
+        try {
+            val upstream = dir.resolve("upstream.json").apply {
+                writeText("""{"vocab": {" ": 16, "ʦ": 20, "A": 24}}""")
+            }
+            val escaped = dir.resolve("escaped.json").apply {
+                writeText("""{"vocab": {" ": 16, "\u02A6": 20, "A": 24}}""")
+            }
+            val legacy = dir.resolve("legacy.json").apply {
+                writeText("""{"vocab": {";": 1, "A": 17, "ʧ": 133}}""")
+            }
+
+            assertTrue(ModelManager.isValidModel(upstream, "vocab_index.json"))
+            assertTrue(ModelManager.isValidModel(escaped, "vocab_index.json"))
+            assertFalse(ModelManager.isValidModel(legacy, "vocab_index.json"))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `kokoro profiles share assets caches and worker name`() {
         assertEquals(
             ModelManager.ttsModels(TtsModel.KOKORO),
