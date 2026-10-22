@@ -32,6 +32,7 @@
 | [Nemotron-3.5 다국어](https://soniqo.audio/ko/guides/nemotron) | 프롬프트 조건부 스트리밍 STT(선택) | [~721 MB](https://huggingface.co/soniqo/Nemotron-3.5-ASR-Streaming-Multilingual-0.6B-LiteRT-INT8) | 미측정 | 100개 이상(zh 포함) |
 | [Canary 180M Flash](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | 오프라인 STT + 번역 (선택) | [273 MB](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | ~780 MB | 4 (en, de, es, fr) |
 | [Kokoro 82M](https://soniqo.audio/ko/guides/kokoro/android) | 텍스트 음성 변환(기본) | [330 MB](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | 640 MB | 8(en, fr, es, it, pt, hi, ja, zh) |
+| [Kokoro 82M 독일어](https://huggingface.co/soniqo/Kokoro-82M-German-Martin-ONNX) | 독일어 텍스트 음성 변환(선택 음성 팩) | 음성당 [170 MB](https://huggingface.co/soniqo/Kokoro-82M-German-Martin-ONNX) | 640 MB | de(Martin, [Victoria](https://huggingface.co/soniqo/Kokoro-82M-German-Victoria-ONNX)) |
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | 스트리밍 음성 합성(선택, 고정 Alba 음성) | ~126 MB | 미측정 | 영어 |
 | [Supertonic-3](https://soniqo.audio/ko/guides/supertonic) | 텍스트 음성 변환(LiteRT, flow-matching, G2P-free, 44.1 kHz) | [~380 MB](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 MB | 31 |
 | [Silero VAD v5](https://soniqo.audio/ko/guides/vad/android) | 음성 활동 감지 | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | 모든 언어 |
@@ -67,6 +68,20 @@ val config = SpeechConfig(
 **Supertonic-3**는 옵트인 방식의 더 높은 품질의 다국어 TTS입니다 — `SpeechConfig(ttsModel = TtsModel.SUPERTONIC)`로 선택하세요(LiteRT 백엔드가 필요합니다). 호스트는 4개의 비자기회귀(non-autoregressive) flow-matching 그래프를 44.1 kHz로 온디바이스에서 실행합니다. 프런트엔드는 G2P-free(NFKD + 유니코드 인덱스 — 음소 변환기 없음)이므로 31개 언어 모두 하나의 경로를 통과합니다.
 
 긴 문장: 번들에는 L=128 잠재 윈도우 그래프 쌍(`vector_estimator_L128.tflite` + `vocoder_L128.tflite`, +341 MB)도 선택 사항으로 포함되어 있습니다. `ModelDownloadWorker.enqueue(context, ttsModel = TtsModel.SUPERTONIC, supertonicLatentBuckets = true)`(또는 `ModelManager.ensureTtsModels`의 같은 플래그)로 다운로드하면 speech-core가 4.5초 기본 윈도우보다 긴 문장을 분할하지 않고 한 번에 합성합니다. 이 쌍은 처음 사용할 때 로드됩니다(+~360 MB RSS). 기본값은 꺼짐입니다.
+
+**독일어 Kokoro**는 다국어 번들의 아홉 번째 음성이 아니라 선택 가능한 음성 팩 한 쌍입니다. Martin(남성)과 Victoria(여성)는 [kikiri-tts](https://huggingface.co/kikiri-tts)가 Kokoro-82M을 미세 조정한 것으로, 각각 독일어 음소만으로 학습된 별도의 162 MB 가중치입니다. 다운로드 호출에서 `KokoroPack`으로 하나를 선택한 뒤 `language = "de"`로 합성하세요:
+
+```kotlin
+val modelDir = ModelManager.ensureTtsModels(
+    context,
+    ttsModel = TtsModel.KOKORO_SHORT_TURN,
+    kokoroPack = KokoroPack.GERMAN_MARTIN, // or GERMAN_VICTORIA
+)
+val tts = SpeechSynthesizer(SpeechSynthesizerConfig(modelDir = modelDir))
+val audio = tts.synthesize("Am 3. Oktober um 18:30 Uhr kostet es 12,80 €.", "de")
+```
+
+같은 `kokoroPack` 인자가 `ModelManager.ensureModels()`, `areModelsReady()`, `areTtsModelsReady()`, `ModelDownloadWorker.enqueue()`에도 있습니다. 팩마다 자체 캐시 디렉터리를 쓰므로 앱은 영어와 독일어를 나란히 설치할 수 있습니다. speech-core는 숫자, 서수, 날짜, 시간, 통화 금액, 단위, 일반 약어를 풀어 읽고, 5만 단어 독일어 사전으로 단어를 해석하며, 나머지는 굴절형, 합성어 분리, 규칙 기반 G2P로 대체합니다. 독일어 팩에는 음성이 정확히 하나(`dm_martin` / `df_victoria`)뿐이며 다른 언어를 넘겨도 그 음성이 유지되고, 다국어 번들에 `"de"`를 넘기면 영어 음성으로 독일어 음소를 말합니다.
 
 Kokoro와 Supertonic 모두 직접 합성 시 호출 단위로 음성 프리셋을 지정할 수 있습니다 — `pipeline.synthesize("Hello", "en", "M1")` (Supertonic `F1`…`F5` / `M1`…`M5`, Kokoro `af_heart`, `ff_siwis` 등). 같은 인자가 `synthesizeStreaming`과 `SpeechSynthesizer`에도 있습니다. 프리셋은 해당 호출에만 적용되며, 생략하거나 `""`를 전달하면 엔진 기본 음성이 유지되고, 알 수 없는 id는 예외를 던집니다.
 
@@ -305,7 +320,7 @@ adb shell settings put secure voice_recognition_service \
 
 ## 시스템 텍스트 음성 변환(`TextToSpeechService`)
 
-데모 앱은 `audio.soniqo.speech.service.SpeechTextToSpeechService`도 노출하므로 Android 설정 → 시스템 → 언어 및 입력 → 텍스트 음성 변환 출력에서 이 앱을 선택할 수 있습니다. 이 경로는 `ModelManager.ensureTtsModels()`와 별도의 `models_tts/` 캐시를 사용하므로, 프레임워크 TTS는 전체 VAD/STT/enhancer 파이프라인 번들이 아니라 Kokoro 자산만 다운로드합니다.
+데모 앱은 `audio.soniqo.speech.service.SpeechTextToSpeechService`도 노출하므로 Android 설정 → 시스템 → 언어 및 입력 → 텍스트 음성 변환 출력에서 이 앱을 선택할 수 있습니다. 이 경로는 `ModelManager.ensureTtsModels()`와 별도의 `models_tts/` 캐시를 사용하므로, 프레임워크 TTS는 전체 VAD/STT/enhancer 파이프라인 번들이 아니라 Kokoro 자산만 다운로드합니다. 서비스는 두 음성을 제공합니다. 영어(`soniqo-kokoro-af-heart`, en-US)와 독일어(`soniqo-kokoro-dm-martin`, de-DE, Martin 팩)입니다. 각 언어는 앱이 처음 요청할 때 자체 캐시에 번들을 다운로드합니다.
 
 다른 앱에서 엔진을 노출하려면 서비스를 선언합니다:
 

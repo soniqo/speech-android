@@ -32,6 +32,7 @@ Este repositório é o **empacotamento Android**: SDK Kotlin, ponte JNI, app de 
 | [Nemotron-3.5 multilíngue](https://soniqo.audio/pt/guides/nemotron) | STT em streaming condicionado por prompt (opcional) | [~721 MB](https://huggingface.co/soniqo/Nemotron-3.5-ASR-Streaming-Multilingual-0.6B-LiteRT-INT8) | ainda não medido | mais de 100 (incluindo zh) |
 | [Canary 180M Flash](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | STT offline + tradução (opcional) | [273 MB](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | ~780 MB | 4 (en, de, es, fr) |
 | [Kokoro 82M](https://soniqo.audio/pt/guides/kokoro/android) | Texto para fala (padrão) | [330 MB](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | 640 MB | 8 (en, fr, es, it, pt, hi, ja, zh) |
+| [Kokoro 82M alemão](https://huggingface.co/soniqo/Kokoro-82M-German-Martin-ONNX) | Texto para fala em alemão (packs de voz opcionais) | [170 MB](https://huggingface.co/soniqo/Kokoro-82M-German-Martin-ONNX) por voz | 640 MB | de (Martin, [Victoria](https://huggingface.co/soniqo/Kokoro-82M-German-Victoria-ONNX)) |
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | Texto para fala em streaming (opcional, voz Alba fixa) | ~126 MB | ainda não medido | Inglês |
 | [Supertonic-3](https://soniqo.audio/pt/guides/supertonic) | Texto para fala (LiteRT, flow-matching, G2P-free, 44,1 kHz) | [~380 MB](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 MB | 31 |
 | [Silero VAD v5](https://soniqo.audio/pt/guides/vad/android) | Detecção de atividade vocal | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | Qualquer |
@@ -67,6 +68,20 @@ val config = SpeechConfig(
 O **Supertonic-3** é um TTS multilíngue opcional de maior qualidade — selecione-o com `SpeechConfig(ttsModel = TtsModel.SUPERTONIC)` (requer o backend LiteRT). O host executa seus quatro grafos de flow-matching não autorregressivos no dispositivo a 44,1 kHz; o front-end é G2P-free (NFKD + índice Unicode — sem phonemizer), de modo que todos os 31 idiomas seguem um único caminho.
 
 Frases longas: o pacote também inclui um par opcional de grafos com janela latente L=128 (`vector_estimator_L128.tflite` + `vocoder_L128.tflite`, +341 MB). Baixe-o com `ModelDownloadWorker.enqueue(context, ttsModel = TtsModel.SUPERTONIC, supertonicLatentBuckets = true)` (ou a mesma flag em `ModelManager.ensureTtsModels`) e o speech-core sintetiza uma frase mais longa que a janela base de 4,5 s em uma única passagem em vez de dividi-la; o par é carregado no primeiro uso (+~360 MB de RSS). Desativado por padrão.
+
+**Kokoro em alemão** é um par de packs de voz opcionais, não uma nona voz do bundle multilíngue: Martin (masculina) e Victoria (feminina) são ajustes finos do Kokoro-82M pela [kikiri-tts](https://huggingface.co/kikiri-tts), cada um um conjunto de pesos separado de 162 MB treinado apenas com fonemas alemães. Escolha um com `KokoroPack` na chamada de download e sintetize com `language = "de"`:
+
+```kotlin
+val modelDir = ModelManager.ensureTtsModels(
+    context,
+    ttsModel = TtsModel.KOKORO_SHORT_TURN,
+    kokoroPack = KokoroPack.GERMAN_MARTIN, // or GERMAN_VICTORIA
+)
+val tts = SpeechSynthesizer(SpeechSynthesizerConfig(modelDir = modelDir))
+val audio = tts.synthesize("Am 3. Oktober um 18:30 Uhr kostet es 12,80 €.", "de")
+```
+
+O mesmo argumento `kokoroPack` existe em `ModelManager.ensureModels()`, `areModelsReady()`, `areTtsModelsReady()` e `ModelDownloadWorker.enqueue()`. Cada pack tem seu próprio diretório de cache, então um app pode manter inglês e alemão instalados lado a lado. O speech-core escreve por extenso números, ordinais, datas, horas, valores, unidades e abreviações comuns, resolve as palavras com um dicionário alemão de 50k entradas e recorre a flexões, divisão de compostos e G2P por regras para o restante. Um pack alemão tem exatamente uma voz (`dm_martin` / `df_victoria`); outro idioma mantém essa voz, e `"de"` no bundle multilíngue fala fonemas alemães com uma voz inglesa.
 
 Tanto o Kokoro quanto o Supertonic aceitam um preset de voz por chamada na síntese direta — `pipeline.synthesize("Hello", "en", "M1")` (Supertonic `F1`…`F5` / `M1`…`M5`; Kokoro `af_heart`, `ff_siwis`, …) — e o mesmo argumento existe em `synthesizeStreaming` e `SpeechSynthesizer`. O preset vale apenas para essa chamada; omita-o (ou passe `""`) para manter a voz padrão do motor, e um id desconhecido lança uma exceção.
 
@@ -337,7 +352,7 @@ O app de demonstração também expõe
 selecionar o app em Configurações → Sistema → Idiomas e entrada → Saída de
 texto para fala. Esse caminho usa `ModelManager.ensureTtsModels()` e um cache
 separado `models_tts/`, portanto o TTS do framework baixa apenas os recursos
-do Kokoro em vez do pacote completo VAD/STT/enhancer.
+do Kokoro em vez do pacote completo VAD/STT/enhancer. O serviço oferece duas vozes: inglês (`soniqo-kokoro-af-heart`, en-US) e alemão (`soniqo-kokoro-dm-martin`, de-DE, o pack Martin). Cada idioma baixa seu bundle para o próprio cache na primeira vez que um app o solicita.
 
 Para expor o motor a partir de outro app, declare o serviço:
 

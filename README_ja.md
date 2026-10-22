@@ -32,6 +32,7 @@
 | [Nemotron-3.5 多言語](https://soniqo.audio/ja/guides/nemotron) | プロンプト条件付きストリーミング STT(任意) | [~721 MB](https://huggingface.co/soniqo/Nemotron-3.5-ASR-Streaming-Multilingual-0.6B-LiteRT-INT8) | 未計測 | 100 以上(zh を含む) |
 | [Canary 180M Flash](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | オフライン STT + 翻訳（任意） | [273 MB](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | ~780 MB | 4 (en, de, es, fr) |
 | [Kokoro 82M](https://soniqo.audio/ja/guides/kokoro/android) | テキスト読み上げ(既定) | [330 MB](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | 640 MB | 8(en、fr、es、it、pt、hi、ja、zh) |
+| [Kokoro 82M ドイツ語](https://huggingface.co/soniqo/Kokoro-82M-German-Martin-ONNX) | ドイツ語テキスト読み上げ(任意のボイスパック) | 1 ボイスあたり [170 MB](https://huggingface.co/soniqo/Kokoro-82M-German-Martin-ONNX) | 640 MB | de(Martin、[Victoria](https://huggingface.co/soniqo/Kokoro-82M-German-Victoria-ONNX)) |
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | ストリーミング音声合成(任意、固定 Alba 音声) | ~126 MB | 未計測 | 英語 |
 | [Supertonic-3](https://soniqo.audio/ja/guides/supertonic) | テキスト読み上げ(LiteRT、flow-matching、G2P-free、44.1 kHz) | [~380 MB](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 MB | 31 |
 | [Silero VAD v5](https://soniqo.audio/ja/guides/vad/android) | 音声活動検出 | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | 任意 |
@@ -67,6 +68,20 @@ val config = SpeechConfig(
 **Supertonic-3** はオプトインの高品質な多言語 TTS です — `SpeechConfig(ttsModel = TtsModel.SUPERTONIC)` で選択します(LiteRT バックエンドが必要)。ホストはその 4 つの非自己回帰 flow-matching グラフを 44.1 kHz でオンデバイス実行します。フロントエンドは G2P-free(NFKD + Unicode インデックス — phonemizer なし)なので、31 言語すべてが単一のパスを通ります。
 
 長い文: バンドルには、L=128 の潜在ウィンドウを持つオプションのグラフペア(`vector_estimator_L128.tflite` + `vocoder_L128.tflite`、+341 MB)も含まれています。`ModelDownloadWorker.enqueue(context, ttsModel = TtsModel.SUPERTONIC, supertonicLatentBuckets = true)`(または `ModelManager.ensureTtsModels` の同じフラグ)でダウンロードすると、speech-core は 4.5 秒の基本ウィンドウより長い文を分割せずに一度で合成します。このペアは初回使用時に読み込まれます(+~360 MB RSS)。デフォルトではオフです。
+
+**ドイツ語 Kokoro** は多言語バンドルの 9 番目の音声ではなく、任意のボイスパックのペアです。Martin(男性)と Victoria(女性)は [kikiri-tts](https://huggingface.co/kikiri-tts) による Kokoro-82M のファインチューニングで、それぞれドイツ語音素のみで学習した独立した 162 MB の重みセットです。ダウンロード呼び出しで `KokoroPack` を選び、`language = "de"` で合成します:
+
+```kotlin
+val modelDir = ModelManager.ensureTtsModels(
+    context,
+    ttsModel = TtsModel.KOKORO_SHORT_TURN,
+    kokoroPack = KokoroPack.GERMAN_MARTIN, // or GERMAN_VICTORIA
+)
+val tts = SpeechSynthesizer(SpeechSynthesizerConfig(modelDir = modelDir))
+val audio = tts.synthesize("Am 3. Oktober um 18:30 Uhr kostet es 12,80 €.", "de")
+```
+
+同じ `kokoroPack` 引数は `ModelManager.ensureModels()`、`areModelsReady()`、`areTtsModelsReady()`、`ModelDownloadWorker.enqueue()` にもあります。各パックは独自のキャッシュディレクトリを持つため、英語とドイツ語を並行してインストールできます。speech-core は数字、序数、日付、時刻、通貨、単位、一般的な略語を読み上げ形に展開し、5 万語のドイツ語辞書で単語を解決し、残りは活用形、複合語分割、規則ベースの G2P にフォールバックします。ドイツ語パックの音声はちょうど 1 つ(`dm_martin` / `df_victoria`)で、他の言語を渡してもその音声のままです。多言語バンドルに `"de"` を渡すと英語音声でドイツ語音素を発話します。
 
 Kokoro と Supertonic はどちらも、直接合成の呼び出しごとに音声プリセットを指定できます — `pipeline.synthesize("Hello", "en", "M1")`(Supertonic は `F1`…`F5` / `M1`…`M5`、Kokoro は `af_heart`、`ff_siwis` など)。同じ引数は `synthesizeStreaming` と `SpeechSynthesizer` にもあります。プリセットはその呼び出しにのみ適用され、省略(または `""` を指定)するとエンジンのデフォルト音声のままになります。未知の id は例外を投げます。
 
@@ -312,7 +327,7 @@ adb shell settings put secure voice_recognition_service \
 
 ## システム音声合成(`TextToSpeechService`)
 
-デモアプリは `audio.soniqo.speech.service.SpeechTextToSpeechService` も公開するため、Android の 設定 → システム → 言語と入力 → テキスト読み上げ出力 でこのアプリを選択できます。この経路は `ModelManager.ensureTtsModels()` と別個の `models_tts/` キャッシュを使用するため、フレームワーク TTS は VAD/STT/enhancer を含む完全なパイプライン一式ではなく Kokoro アセットだけをダウンロードします。
+デモアプリは `audio.soniqo.speech.service.SpeechTextToSpeechService` も公開するため、Android の 設定 → システム → 言語と入力 → テキスト読み上げ出力 でこのアプリを選択できます。この経路は `ModelManager.ensureTtsModels()` と別個の `models_tts/` キャッシュを使用するため、フレームワーク TTS は VAD/STT/enhancer を含む完全なパイプライン一式ではなく Kokoro アセットだけをダウンロードします。 サービスは 2 つの音声を提供します。英語(`soniqo-kokoro-af-heart`、en-US)とドイツ語(`soniqo-kokoro-dm-martin`、de-DE、Martin パック)です。各言語はアプリが最初に要求した時点で、それぞれのキャッシュにバンドルをダウンロードします。
 
 別のアプリでエンジンを公開するには、サービスを宣言します:
 

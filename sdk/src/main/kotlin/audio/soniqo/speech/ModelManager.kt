@@ -94,6 +94,7 @@ object ModelManager {
         supertonicLatentBuckets: Boolean = false,
         enableSmartTurn: Boolean = false,
         enableEnhancer: Boolean = true,
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
     ): List<ModelFile> {
         val suffix = if (precision == ModelPrecision.INT8) "-int8" else ""
         val files = vadModels().toMutableList()
@@ -148,7 +149,7 @@ object ModelManager {
             SttModel.NEMOTRON_MULTILINGUAL -> files += transcriberModels(sttBackend, precision)
         }
 
-        files += ttsModels(ttsModel, supertonicLatentBuckets)
+        files += ttsModels(ttsModel, supertonicLatentBuckets, kokoroPack)
 
         if (enableEnhancer) {
             files += ModelFile("DeepFilterNet3-ONNX", "deepfilter.onnx", DEEPFILTER_REVISION)
@@ -241,12 +242,28 @@ object ModelManager {
      *   first use (+~360 MB RSS). Off by default; ignored by other TTS models.
      *   The pair shares the Supertonic cache set, so enabling it later
      *   downloads only the two extra files.
+     * @param kokoroPack Kokoro only: the weight bundle to fetch. A German pack
+     *   is a separate single-voice checkpoint in the same file layout, plus
+     *   the upstream vocabulary and the German dictionary the engine needs
+     *   for it; it never shares a cache with the multilingual bundle.
      */
     internal fun ttsModels(
         ttsModel: TtsModel,
         supertonicLatentBuckets: Boolean = false,
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
     ): List<ModelFile> = when (ttsModel) {
-        TtsModel.KOKORO, TtsModel.KOKORO_SHORT_TURN -> listOf(
+        TtsModel.KOKORO, TtsModel.KOKORO_SHORT_TURN -> if (kokoroPack != KokoroPack.MULTILINGUAL) listOf(
+            // One fine-tuned weight set per voice: both graph profiles share
+            // the FP16 external data like the multilingual bundle, and the
+            // bundle carries its own vocab_index.json (the German voices were
+            // trained with hexgrad's exact token table) and dict_de.json.
+            ModelFile(kokoroPack.repo, "kokoro-e2e.onnx"),
+            ModelFile(kokoroPack.repo, "kokoro-e2e-realtime.onnx"),
+            ModelFile(kokoroPack.repo, "kokoro-e2e.onnx.data"),
+            ModelFile(kokoroPack.repo, "vocab_index.json"),
+            ModelFile(kokoroPack.repo, "dict_de.json"),
+            ModelFile(kokoroPack.repo, "voices/${kokoroPack.defaultVoice}.bin"),
+        ) else listOf(
             // Both graph profiles share one external weight blob. Keeping both
             // protos in the same cache makes profile switches a ~2.6 MB fetch,
             // never a second ~310 MB weights download.
@@ -375,18 +392,19 @@ object ModelManager {
         supertonicLatentBuckets: Boolean = false,
         enableSmartTurn: Boolean = false,
         enableEnhancer: Boolean = true,
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
     ): Boolean {
-        val dir = modelDirFile(context, precision, sttModel, sttBackend, ttsModel)
+        val dir = modelDirFile(context, precision, sttModel, sttBackend, ttsModel, kokoroPack)
         if (!dir.exists()) return false
 
         val versionFile = File(dir, "version.txt")
         val cached = versionFile.takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0
         if (cached < MODEL_VERSION) return false
-        if (cachedModelSet(dir) != modelSetKey(precision, sttModel, sttBackend, ttsModel)) return false
+        if (cachedModelSet(dir) != modelSetKey(precision, sttModel, sttBackend, ttsModel, kokoroPack)) return false
 
         val fileList = models(
             precision, sttModel, sttBackend, ttsModel,
-            supertonicLatentBuckets, enableSmartTurn, enableEnhancer,
+            supertonicLatentBuckets, enableSmartTurn, enableEnhancer, kokoroPack,
         )
         val allFiles = if (precision == ModelPrecision.FP32 && sttModel == SttModel.PARAKEET) {
             fileList + ModelFile("Parakeet-TDT-0.6B-ONNX", "parakeet-encoder.onnx.data")
@@ -408,16 +426,17 @@ object ModelManager {
         context: Context,
         ttsModel: TtsModel = TtsModel.KOKORO_SHORT_TURN,
         supertonicLatentBuckets: Boolean = false,
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
     ): Boolean {
-        val dir = File(context.filesDir, "models_tts")
+        val dir = File(context.filesDir, ttsModelDirName(ttsModel, kokoroPack))
         if (!dir.exists()) return false
 
         val versionFile = File(dir, "version.txt")
         val cached = versionFile.takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0
         if (cached < MODEL_VERSION) return false
-        if (cachedModelSet(dir) != ttsModelSetKey(ttsModel)) return false
+        if (cachedModelSet(dir) != ttsModelSetKey(ttsModel, kokoroPack)) return false
 
-        return ttsModels(ttsModel, supertonicLatentBuckets).all { model ->
+        return ttsModels(ttsModel, supertonicLatentBuckets, kokoroPack).all { model ->
             val dest = File(dir, model.localFilename)
             dest.exists() && isValidModel(dest, model.filename, model.repo)
         }
@@ -472,11 +491,19 @@ object ModelManager {
         sttModel: SttModel = SttModel.PARAKEET_EOU,
         sttBackend: SttBackend = SttBackend.ONNX,
         ttsModel: TtsModel = TtsModel.KOKORO_SHORT_TURN,
-    ): String = modelDirFile(context, precision, sttModel, sttBackend, ttsModel).absolutePath
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
+    ): String = modelDirFile(context, precision, sttModel, sttBackend, ttsModel, kokoroPack).absolutePath
 
-    /** Path to the TTS-only model directory, without downloading. */
-    fun ttsModelDir(context: Context): String =
-        File(context.filesDir, "models_tts").absolutePath
+    /**
+     * Path to the TTS-only model directory, without downloading. Each
+     * [KokoroPack] has its own directory, so an app can keep the multilingual
+     * and a German pack installed side by side.
+     */
+    fun ttsModelDir(
+        context: Context,
+        ttsModel: TtsModel = TtsModel.KOKORO_SHORT_TURN,
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
+    ): String = File(context.filesDir, ttsModelDirName(ttsModel, kokoroPack)).absolutePath
 
     /** Path to the VAD-only model directory, without downloading. */
     fun vadModelDir(context: Context): String =
@@ -519,15 +546,16 @@ object ModelManager {
         supertonicLatentBuckets: Boolean = false,
         enableSmartTurn: Boolean = false,
         enableEnhancer: Boolean = true,
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
     ): String = withContext(Dispatchers.IO) {
-        val dir = modelDirFile(context, precision, sttModel, sttBackend, ttsModel)
+        val dir = modelDirFile(context, precision, sttModel, sttBackend, ttsModel, kokoroPack)
         dir.mkdirs()
         File(dir, "voices").mkdirs()
 
         // Invalidate cache if model version or requested model set changed.
         val versionFile = File(dir, "version.txt")
         val cached = versionFile.takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0
-        val requestedModelSet = modelSetKey(precision, sttModel, sttBackend, ttsModel)
+        val requestedModelSet = modelSetKey(precision, sttModel, sttBackend, ttsModel, kokoroPack)
         if (cached < MODEL_VERSION || cachedModelSet(dir) != requestedModelSet) {
             clearModelCache(dir)
         }
@@ -539,7 +567,7 @@ object ModelManager {
 
         val fileList = models(
             precision, sttModel, sttBackend, ttsModel,
-            supertonicLatentBuckets, enableSmartTurn, enableEnhancer,
+            supertonicLatentBuckets, enableSmartTurn, enableEnhancer, kokoroPack,
         )
         // FP32 Parakeet encoder needs the external data file.
         val allFiles = if (precision == ModelPrecision.FP32 && sttModel == SttModel.PARAKEET) {
@@ -564,22 +592,23 @@ object ModelManager {
         ttsModel: TtsModel = TtsModel.KOKORO_SHORT_TURN,
         onProgress: ((Progress) -> Unit)? = null,
         supertonicLatentBuckets: Boolean = false,
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
     ): String = withContext(Dispatchers.IO) {
-        val dir = File(context.filesDir, "models_tts")
+        val dir = File(context.filesDir, ttsModelDirName(ttsModel, kokoroPack))
         dir.mkdirs()
         File(dir, "voices").mkdirs()
         File(dir, "voice_styles").mkdirs()
 
         val versionFile = File(dir, "version.txt")
         val cached = versionFile.takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0
-        val requestedModelSet = ttsModelSetKey(ttsModel)
+        val requestedModelSet = ttsModelSetKey(ttsModel, kokoroPack)
         if (cached < MODEL_VERSION || cachedModelSet(dir) != requestedModelSet) {
             clearModelCache(dir)
             File(dir, "voices").mkdirs()
             File(dir, "voice_styles").mkdirs()
         }
 
-        downloadMissingModels(dir, ttsModels(ttsModel, supertonicLatentBuckets), onProgress)
+        downloadMissingModels(dir, ttsModels(ttsModel, supertonicLatentBuckets, kokoroPack), onProgress)
 
         File(dir, "precision.txt").writeText("TTS")
         versionFile.writeText(MODEL_VERSION.toString())
@@ -937,15 +966,17 @@ object ModelManager {
         ttsModel: TtsModel = TtsModel.KOKORO_SHORT_TURN,
         enableSmartTurn: Boolean = false,
         enableEnhancer: Boolean = true,
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
     ): Long {
-        val dir = modelDirFile(context, precision, sttModel, sttBackend, ttsModel)
-        val stale = cacheIsStale(dir, modelSetKey(precision, sttModel, sttBackend, ttsModel))
+        val dir = modelDirFile(context, precision, sttModel, sttBackend, ttsModel, kokoroPack)
+        val stale = cacheIsStale(dir, modelSetKey(precision, sttModel, sttBackend, ttsModel, kokoroPack))
         return plannedBytes(
             dir,
             models(
                 precision, sttModel, sttBackend, ttsModel,
                 enableSmartTurn = enableSmartTurn,
                 enableEnhancer = enableEnhancer,
+                kokoroPack = kokoroPack,
             ),
             stale,
         )
@@ -984,12 +1015,13 @@ object ModelManager {
         sttModel: SttModel,
         sttBackend: SttBackend,
         ttsModel: TtsModel,
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
     ): String = buildList {
         add("v$MODEL_VERSION")
         add("precision=${precision.name}")
         add("stt=${sttModel.name}")
         add("backend=${sttBackend.name}")
-        add("tts=${ttsCacheName(ttsModel)}")
+        add("tts=${ttsCacheName(ttsModel, kokoroPack)}")
         if (sttModel == SttModel.NEMOTRON_MULTILINGUAL && sttBackend == SttBackend.LITERT) {
             add("sttRevision=${nemotronLiteRtRevision(precision)}")
         }
@@ -1014,7 +1046,8 @@ object ModelManager {
         sttModel: SttModel,
         sttBackend: SttBackend,
         ttsModel: TtsModel,
-    ): File = File(context.filesDir, modelDirName(precision, sttModel, sttBackend, ttsModel))
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
+    ): File = File(context.filesDir, modelDirName(precision, sttModel, sttBackend, ttsModel, kokoroPack))
 
     @VisibleForTesting
     internal fun modelDirName(
@@ -1022,12 +1055,14 @@ object ModelManager {
         sttModel: SttModel,
         sttBackend: SttBackend,
         ttsModel: TtsModel,
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
     ): String {
         if (
             precision == ModelPrecision.INT8 &&
             sttModel == SttModel.PARAKEET_EOU &&
             sttBackend == SttBackend.ONNX &&
-            ttsModel.isKokoro
+            ttsModel.isKokoro &&
+            kokoroPack == KokoroPack.MULTILINGUAL
         ) {
             return "models"
         }
@@ -1036,16 +1071,31 @@ object ModelManager {
             precision.name,
             sttModel.name,
             sttBackend.name,
-            ttsCacheName(ttsModel),
+            ttsCacheName(ttsModel, kokoroPack),
         ).joinToString("-").lowercase()
     }
 
     @VisibleForTesting
-    internal fun ttsModelSetKey(ttsModel: TtsModel): String = listOf(
+    internal fun ttsModelSetKey(
+        ttsModel: TtsModel,
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
+    ): String = listOf(
         "v$MODEL_VERSION",
         "profile=TTS",
-        "tts=${ttsCacheName(ttsModel)}",
+        "tts=${ttsCacheName(ttsModel, kokoroPack)}",
     ).joinToString("|")
+
+    /** `models_tts` for the default set; a German Kokoro pack gets its own directory. */
+    @VisibleForTesting
+    internal fun ttsModelDirName(
+        ttsModel: TtsModel,
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
+    ): String =
+        if (ttsModel.isKokoro && kokoroPack != KokoroPack.MULTILINGUAL) {
+            "models_tts-${kokoroPack.cacheName.lowercase()}"
+        } else {
+            "models_tts"
+        }
 
     @VisibleForTesting
     internal fun vadModelSetKey(): String = listOf(
@@ -1053,8 +1103,11 @@ object ModelManager {
         "profile=VAD",
     ).joinToString("|")
 
-    private fun ttsCacheName(ttsModel: TtsModel): String =
-        if (ttsModel.isKokoro) TtsModel.KOKORO.name else ttsModel.name
+    private fun ttsCacheName(
+        ttsModel: TtsModel,
+        kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
+    ): String =
+        if (ttsModel.isKokoro) kokoroPack.cacheName else ttsModel.name
 
     @VisibleForTesting
     internal fun llmModelSetKey(llmModel: LlmModel): String = listOf(
@@ -1305,6 +1358,7 @@ object ModelManager {
         "us_silver.json" to 3_099_517L,
         "dict_fr.json" to 51_497L,
         "dict_pt.json" to 37_438L,
+        "dict_de.json" to 1_403_333L,
         "deepfilter.onnx" to 8_608_859L,
         "model.litertlm" to 297_212_528L,
         "model-lora16-android.litertlm" to 327_438_928L,

@@ -32,6 +32,7 @@
 | [Nemotron-3.5 多语言](https://soniqo.audio/zh/guides/nemotron) | 提示词条件流式 STT(可选) | [~721 MB](https://huggingface.co/soniqo/Nemotron-3.5-ASR-Streaming-Multilingual-0.6B-LiteRT-INT8) | 尚未测量 | 100+（包括 zh） |
 | [Canary 180M Flash](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | 离线 STT + 翻译（可选） | [273 MB](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | ~780 MB | 4 (en, de, es, fr) |
 | [Kokoro 82M](https://soniqo.audio/zh/guides/kokoro/android) | 文本转语音(默认) | [330 MB](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | 640 MB | 8(en、fr、es、it、pt、hi、ja、zh) |
+| [Kokoro 82M 德语](https://huggingface.co/soniqo/Kokoro-82M-German-Martin-ONNX) | 德语文本转语音(可选音色包) | 每个音色 [170 MB](https://huggingface.co/soniqo/Kokoro-82M-German-Martin-ONNX) | 640 MB | de(Martin、[Victoria](https://huggingface.co/soniqo/Kokoro-82M-German-Victoria-ONNX)) |
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | 流式文本转语音(可选,固定 Alba 音色) | ~126 MB | 尚未测量 | 英语 |
 | [Supertonic-3](https://soniqo.audio/zh/guides/supertonic) | 文本转语音(LiteRT、流匹配、免 G2P、44.1 kHz) | [~380 MB](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 MB | 31 |
 | [Silero VAD v5](https://soniqo.audio/zh/guides/vad/android) | 语音活动检测 | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | 任意 |
@@ -67,6 +68,20 @@ val config = SpeechConfig(
 **Supertonic-3** 是可选启用的更高质量多语言 TTS — 通过 `SpeechConfig(ttsModel = TtsModel.SUPERTONIC)` 选用(需要 LiteRT 后端)。宿主在设备端以 44.1 kHz 运行其四个非自回归流匹配图;前端免 G2P(NFKD + Unicode 索引 — 无音素转换器),因此全部 31 种语言走同一条路径。
 
 长句:模型包还附带一对可选的 L=128 潜在窗口图(`vector_estimator_L128.tflite` + `vocoder_L128.tflite`,+341 MB)。通过 `ModelDownloadWorker.enqueue(context, ttsModel = TtsModel.SUPERTONIC, supertonicLatentBuckets = true)`(或 `ModelManager.ensureTtsModels` 上的同名标志)下载后,speech-core 会把超过 4.5 s 基础窗口的句子一次合成,而不是拆开;这对图在首次使用时加载(+~360 MB RSS)。默认关闭。
+
+**德语 Kokoro** 是一对可选的音色包,而不是多语言包的第九种音色:Martin(男声)和 Victoria(女声)是 [kikiri-tts](https://huggingface.co/kikiri-tts) 对 Kokoro-82M 的微调,各自是一套独立的 162 MB 权重,只在德语音素上训练。下载时通过 `KokoroPack` 选择其一,然后以 `language = "de"` 合成:
+
+```kotlin
+val modelDir = ModelManager.ensureTtsModels(
+    context,
+    ttsModel = TtsModel.KOKORO_SHORT_TURN,
+    kokoroPack = KokoroPack.GERMAN_MARTIN, // or GERMAN_VICTORIA
+)
+val tts = SpeechSynthesizer(SpeechSynthesizerConfig(modelDir = modelDir))
+val audio = tts.synthesize("Am 3. Oktober um 18:30 Uhr kostet es 12,80 €.", "de")
+```
+
+`ModelManager.ensureModels()`、`areModelsReady()`、`areTtsModelsReady()` 和 `ModelDownloadWorker.enqueue()` 也有同样的 `kokoroPack` 参数。每个音色包有自己的缓存目录,因此应用可以同时安装英语和德语。speech-core 会把数字、序数、日期、时间、货币金额、单位和常见缩写展开为文字,通过 5 万词的德语词典解析单词,其余则回退到词形变化、复合词拆分和基于规则的 G2P。德语音色包只包含一个音色(`dm_martin` / `df_victoria`);传入其他语言仍使用该音色,而向多语言包传入 `"de"` 则会用英语音色朗读德语音素。
 
 Kokoro 与 Supertonic 都支持在直接合成时按调用指定音色预设 — `pipeline.synthesize("Hello", "en", "M1")`(Supertonic:`F1`…`F5` / `M1`…`M5`;Kokoro:`af_heart`、`ff_siwis` 等)— `synthesizeStreaming` 和 `SpeechSynthesizer` 也有同样的参数。该预设仅对本次调用生效;省略它(或传 `""`)则沿用引擎默认音色,未知 id 会抛出异常。
 
@@ -300,7 +315,7 @@ adb shell settings put secure voice_recognition_service \
 
 ## 系统文字转语音(`TextToSpeechService`)
 
-演示应用还暴露 `audio.soniqo.speech.service.SpeechTextToSpeechService`, 因此 Android 可以在 设置 → 系统 → 语言和输入 → 文字转语音输出 中选择该应用。此路径使用 `ModelManager.ensureTtsModels()` 和单独的 `models_tts/` 缓存, 所以框架 TTS 只下载 Kokoro 资源, 而不会拉取完整的 VAD/STT/enhancer 管线包。
+演示应用还暴露 `audio.soniqo.speech.service.SpeechTextToSpeechService`, 因此 Android 可以在 设置 → 系统 → 语言和输入 → 文字转语音输出 中选择该应用。此路径使用 `ModelManager.ensureTtsModels()` 和单独的 `models_tts/` 缓存, 所以框架 TTS 只下载 Kokoro 资源, 而不会拉取完整的 VAD/STT/enhancer 管线包。 该服务提供两种音色:英语(`soniqo-kokoro-af-heart`,en-US)和德语(`soniqo-kokoro-dm-martin`,de-DE,Martin 音色包)。每种语言在应用首次请求时将其模型包下载到各自的缓存。
 
 要在其他应用中暴露该引擎, 请声明服务:
 

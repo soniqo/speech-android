@@ -279,6 +279,42 @@ class ModelDownloadWorkerTest {
     }
 
     @Test
+    fun `kokoro pack input reaches ModelManager`() = runBlocking {
+        coEvery {
+            ModelManager.ensureModels(any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+        } returns "/fake"
+
+        TestListenableWorkerBuilder<ModelDownloadWorker>(context)
+            .setInputData(workDataOf(ModelDownloadWorker.KEY_KOKORO_PACK to "GERMAN_MARTIN"))
+            .build()
+            .doWork()
+
+        coVerify(exactly = 1) {
+            ModelManager.ensureModels(
+                any(),
+                ModelPrecision.INT8,
+                any(),
+                any(),
+                TtsModel.KOKORO_SHORT_TURN,
+                any(),
+                false,
+                false,
+                true,
+                KokoroPack.GERMAN_MARTIN,
+            )
+        }
+        assertEquals(
+            "GERMAN_VICTORIA",
+            ModelDownloadWorker.request(kokoroPack = KokoroPack.GERMAN_VICTORIA)
+                .workSpec.input.getString(ModelDownloadWorker.KEY_KOKORO_PACK),
+        )
+        assertEquals(
+            "MULTILINGUAL",
+            ModelDownloadWorker.request().workSpec.input.getString(ModelDownloadWorker.KEY_KOKORO_PACK),
+        )
+    }
+
+    @Test
     fun `request defaults to short-turn Kokoro`() {
         val req = ModelDownloadWorker.request()
 

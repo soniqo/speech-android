@@ -85,6 +85,9 @@ class ModelDownloadWorker(
         val llmModel = inputData.getString(KEY_LLM_MODEL)
             ?.let { runCatching { LlmModel.valueOf(it) }.getOrNull() }
             ?: LlmModel.FUNCTIONGEMMA
+        val kokoroPack = inputData.getString(KEY_KOKORO_PACK)
+            ?.let { runCatching { KokoroPack.valueOf(it) }.getOrNull() }
+            ?: KokoroPack.MULTILINGUAL
         // When set, the FunctionGemma bundle is downloaded here too, so the
         // whole ~800 MB setup runs in this foreground worker — surviving doze
         // and Wi-Fi power-save that would kill an in-app download.
@@ -116,7 +119,7 @@ class ModelDownloadWorker(
                 add(Phase(
                     plannedBytes = ModelManager.plannedModelBytes(
                         context, precision, sttModel, sttBackend, ttsModel,
-                        enableSmartTurn, enableEnhancer,
+                        enableSmartTurn, enableEnhancer, kokoroPack,
                     ),
                     outputKey = KEY_MODEL_DIR,
                 ) { report ->
@@ -130,6 +133,7 @@ class ModelDownloadWorker(
                         supertonicLatentBuckets = supertonicLatentBuckets,
                         enableSmartTurn = enableSmartTurn,
                         enableEnhancer = enableEnhancer,
+                        kokoroPack = kokoroPack,
                     )
                 })
             }
@@ -390,6 +394,7 @@ class ModelDownloadWorker(
         const val KEY_STT_MODEL = "sttModel"
         const val KEY_STT_BACKEND = "sttBackend"
         const val KEY_TTS_MODEL = "ttsModel"
+        const val KEY_KOKORO_PACK = "kokoroPack"
         const val KEY_INCLUDE_LLM = "includeLlm"
         const val KEY_SUPERTONIC_LATENT_BUCKETS = "supertonicLatentBuckets"
         const val KEY_ENABLE_SMART_TURN = "enableSmartTurn"
@@ -459,6 +464,7 @@ class ModelDownloadWorker(
             includeDiarizer: Boolean = false,
             includeSpeakerEmbedding: Boolean = false,
             enableEnhancer: Boolean = true,
+            kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
         ): String {
             val standaloneSets = includeVad || includeTranscriber ||
                 includeDiarizer || includeSpeakerEmbedding
@@ -467,6 +473,7 @@ class ModelDownloadWorker(
                 sttModel == SttModel.PARAKEET_EOU &&
                 sttBackend == SttBackend.ONNX &&
                 ttsModel.isKokoro &&
+                kokoroPack == KokoroPack.MULTILINGUAL &&
                 !includeLlm &&
                 !enableSmartTurn &&
                 enableEnhancer &&
@@ -481,7 +488,7 @@ class ModelDownloadWorker(
                 llmModel == LlmModel.FUNCTIONGEMMA -> ".llm"
                 else -> ".llm.${llmModel.name}"
             }
-            val ttsName = if (ttsModel.isKokoro) TtsModel.KOKORO.name else ttsModel.name
+            val ttsName = if (ttsModel.isKokoro) kokoroPack.cacheName else ttsModel.name
             val smartTurn = if (enableSmartTurn) ".smartTurn" else ""
             val enhancer = if (enableEnhancer) "" else ".noEnhancer"
             val pipeline = if (includePipeline) {
@@ -517,6 +524,7 @@ class ModelDownloadWorker(
             includeDiarizer: Boolean = false,
             includeSpeakerEmbedding: Boolean = false,
             enableEnhancer: Boolean = true,
+            kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
         ) =
             OneTimeWorkRequestBuilder<ModelDownloadWorker>()
                 .setInputData(workDataOf(
@@ -524,6 +532,7 @@ class ModelDownloadWorker(
                     KEY_STT_MODEL to sttModel.name,
                     KEY_STT_BACKEND to sttBackend.name,
                     KEY_TTS_MODEL to ttsModel.name,
+                    KEY_KOKORO_PACK to kokoroPack.name,
                     KEY_INCLUDE_LLM to includeLlm,
                     KEY_LLM_MODEL to llmModel.name,
                     KEY_SUPERTONIC_LATENT_BUCKETS to supertonicLatentBuckets,
@@ -562,12 +571,14 @@ class ModelDownloadWorker(
             includeDiarizer: Boolean = false,
             includeSpeakerEmbedding: Boolean = false,
             enableEnhancer: Boolean = true,
+            kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
         ): java.util.UUID {
             val req = request(
                 precision = precision,
                 sttModel = sttModel,
                 sttBackend = sttBackend,
                 ttsModel = ttsModel,
+                kokoroPack = kokoroPack,
                 includeLlm = includeLlm,
                 llmModel = llmModel,
                 supertonicLatentBuckets = supertonicLatentBuckets,
@@ -587,6 +598,7 @@ class ModelDownloadWorker(
                     sttModel = sttModel,
                     sttBackend = sttBackend,
                     ttsModel = ttsModel,
+                    kokoroPack = kokoroPack,
                     includeLlm = includeLlm,
                     llmModel = llmModel,
                     supertonicLatentBuckets = supertonicLatentBuckets,

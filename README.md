@@ -32,6 +32,7 @@ This repo is the **Android packaging**: Kotlin SDK, JNI bridge, demo app. The C+
 | [Nemotron-3.5 multilingual](https://soniqo.audio/guides/nemotron) | Prompt-conditioned streaming STT (optional) | [~721 MB](https://huggingface.co/soniqo/Nemotron-3.5-ASR-Streaming-Multilingual-0.6B-LiteRT-INT8) | not yet measured | 100+ (including zh) |
 | [Canary 180M Flash](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | Offline STT + translation (optional) | [273 MB](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | ~780 MB | 4 (en, de, es, fr) |
 | [Kokoro 82M](https://soniqo.audio/guides/kokoro/android) | Text-to-speech (default) | [330 MB](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | 640 MB | 8 (en, fr, es, it, pt, hi, ja, zh) |
+| [Kokoro 82M German](https://huggingface.co/soniqo/Kokoro-82M-German-Martin-ONNX) | German text-to-speech (optional voice packs) | [170 MB](https://huggingface.co/soniqo/Kokoro-82M-German-Martin-ONNX) per voice | 640 MB | de (Martin, [Victoria](https://huggingface.co/soniqo/Kokoro-82M-German-Victoria-ONNX)) |
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | Streaming text-to-speech (optional, fixed Alba voice) | ~126 MB | not yet measured | English |
 | [Supertonic-3](https://soniqo.audio/guides/supertonic) | Text-to-speech (LiteRT, flow-matching, G2P-free, 44.1 kHz) | [~380 MB](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 MB | 31 |
 | [Silero VAD v5](https://soniqo.audio/guides/vad/android) | Voice activity detection | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | Any |
@@ -85,6 +86,33 @@ Long sentences: the bundle also ships an optional L=128 latent-window graph pair
 (or the same flag on `ModelManager.ensureTtsModels`) and speech-core synthesizes a sentence longer
 than the 4.5 s base window in one pass instead of splitting it; the pair is loaded on first use
 (+~360 MB RSS). Off by default.
+
+**German Kokoro** is a pair of optional voice packs rather than a ninth voice
+of the multilingual bundle: Martin (male) and Victoria (female) are
+[kikiri-tts](https://huggingface.co/kikiri-tts) fine-tunes of Kokoro-82M, each
+a separate 162 MB weight set trained on German phonemes. Select one with
+`KokoroPack` on the download call, then synthesize with `language = "de"`:
+
+```kotlin
+val modelDir = ModelManager.ensureTtsModels(
+    context,
+    ttsModel = TtsModel.KOKORO_SHORT_TURN,
+    kokoroPack = KokoroPack.GERMAN_MARTIN, // or GERMAN_VICTORIA
+)
+val tts = SpeechSynthesizer(SpeechSynthesizerConfig(modelDir = modelDir))
+val audio = tts.synthesize("Am 3. Oktober um 18:30 Uhr kostet es 12,80 €.", "de")
+```
+
+The same `kokoroPack` argument exists on `ModelManager.ensureModels()`,
+`areModelsReady()`, `areTtsModelsReady()` and `ModelDownloadWorker.enqueue()`.
+Each pack has its own cache directory, so an app can keep English and German
+installed side by side. speech-core spells out numbers, ordinals, dates,
+times, currency amounts, units and common abbreviations, resolves words
+through a 50k-word German dictionary and falls back to inflection, compound
+splitting and rule-based G2P for the rest. A German pack carries exactly one
+voice (`dm_martin` / `df_victoria`); passing another language to it keeps that
+voice, and passing `"de"` to the multilingual bundle speaks German phonemes
+with an English voice.
 
 Both Kokoro and Supertonic take a per-call voice preset on direct synthesis —
 `pipeline.synthesize("Hello", "en", "M1")` (Supertonic `F1`…`F5` / `M1`…`M5`; Kokoro `af_heart`,
@@ -417,7 +445,10 @@ The demo app also exposes
 the app under Settings → System → Languages & input → Text-to-speech output.
 This path uses `ModelManager.ensureTtsModels()` and a separate `models_tts/`
 cache, so framework TTS downloads Kokoro assets only instead of the full
-VAD/STT/enhancer pipeline bundle.
+VAD/STT/enhancer pipeline bundle. The service offers two voices: English
+(`soniqo-kokoro-af-heart`, en-US) and German (`soniqo-kokoro-dm-martin`,
+de-DE, the Martin pack). Each language downloads its bundle into its own
+cache the first time an app requests it.
 
 To expose the engine from another app, declare the service:
 
