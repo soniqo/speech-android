@@ -32,6 +32,7 @@ Android के लिए ऑन-डिवाइस स्पीच SDK, [ONNX Ru
 | [Nemotron-3.5 बहुभाषी](https://soniqo.audio/hi/guides/nemotron) | प्रॉम्प्ट-कंडीशन्ड स्ट्रीमिंग STT (वैकल्पिक) | [~721 MB](https://huggingface.co/soniqo/Nemotron-3.5-ASR-Streaming-Multilingual-0.6B-LiteRT-INT8) | अभी मापा नहीं गया | 100+ (zh सहित) |
 | [Canary 180M Flash](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | Offline STT + translation (optional) | [273 MB](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | ~780 MB | 4 (en, de, es, fr) |
 | [Kokoro 82M](https://soniqo.audio/hi/guides/kokoro/android) | टेक्स्ट-टू-स्पीच (डिफ़ॉल्ट) | [330 MB](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | 640 MB | 8 (en, fr, es, it, pt, hi, ja, zh) |
+| [Kokoro 82M जर्मन](https://huggingface.co/soniqo/Kokoro-82M-German-Martin-ONNX) | जर्मन टेक्स्ट-टू-स्पीच (वैकल्पिक वॉइस पैक) | प्रति आवाज़ [170 MB](https://huggingface.co/soniqo/Kokoro-82M-German-Martin-ONNX) | 640 MB | de (Martin, [Victoria](https://huggingface.co/soniqo/Kokoro-82M-German-Victoria-ONNX)) |
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | स्ट्रीमिंग टेक्स्ट-टू-स्पीच (वैकल्पिक, स्थिर Alba आवाज़) | ~126 MB | अभी मापा नहीं गया | अंग्रेज़ी |
 | [Supertonic-3](https://soniqo.audio/hi/guides/supertonic) | टेक्स्ट-टू-स्पीच (LiteRT, फ़्लो-मैचिंग, G2P-free, 44.1 kHz) | [~380 MB](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 MB | 31 |
 | [Silero VAD v5](https://soniqo.audio/hi/guides/vad/android) | वॉयस एक्टिविटी डिटेक्शन | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | कोई भी |
@@ -67,6 +68,20 @@ val config = SpeechConfig(
 **Supertonic-3** एक ऑप्ट-इन उच्च-गुणवत्ता वाला बहुभाषी TTS है — इसे `SpeechConfig(ttsModel = TtsModel.SUPERTONIC)` के साथ चुनें (LiteRT बैकएंड आवश्यक)। होस्ट इसके चार नॉन-ऑटोरिग्रेसिव फ़्लो-मैचिंग ग्राफ़ ऑन-डिवाइस 44.1 kHz पर चलाता है; फ़्रंट-एंड G2P-free है (NFKD + Unicode इंडेक्स — कोई फ़ोनेमाइज़र नहीं), इसलिए सभी 31 भाषाएँ एक ही पथ से होकर गुजरती हैं।
 
 लंबे वाक्य: बंडल में L=128 लेटेंट-विंडो वाले ग्राफ़ की एक वैकल्पिक जोड़ी भी शामिल है (`vector_estimator_L128.tflite` + `vocoder_L128.tflite`, +341 MB)। इसे `ModelDownloadWorker.enqueue(context, ttsModel = TtsModel.SUPERTONIC, supertonicLatentBuckets = true)` (या `ModelManager.ensureTtsModels` पर उसी फ़्लैग) से डाउनलोड करें, तो speech-core 4.5 s की बेस विंडो से लंबे वाक्य को विभाजित करने के बजाय एक ही पास में सिंथेसाइज़ करता है; यह जोड़ी पहले उपयोग पर लोड होती है (+~360 MB RSS)। डिफ़ॉल्ट रूप से बंद।
+
+**जर्मन Kokoro** बहुभाषी बंडल की नौवीं आवाज़ नहीं बल्कि वैकल्पिक वॉइस पैकों की एक जोड़ी है: Martin (पुरुष) और Victoria (महिला) [kikiri-tts](https://huggingface.co/kikiri-tts) द्वारा Kokoro-82M के फाइन-ट्यून हैं, हर एक केवल जर्मन स्वनिमों पर प्रशिक्षित 162 MB का अलग वेट सेट। डाउनलोड कॉल में `KokoroPack` से एक चुनें, फिर `language = "de"` के साथ सिंथेसाइज़ करें:
+
+```kotlin
+val modelDir = ModelManager.ensureTtsModels(
+    context,
+    ttsModel = TtsModel.KOKORO_SHORT_TURN,
+    kokoroPack = KokoroPack.GERMAN_MARTIN, // or GERMAN_VICTORIA
+)
+val tts = SpeechSynthesizer(SpeechSynthesizerConfig(modelDir = modelDir))
+val audio = tts.synthesize("Am 3. Oktober um 18:30 Uhr kostet es 12,80 €.", "de")
+```
+
+वही `kokoroPack` आर्ग्युमेंट `ModelManager.ensureModels()`, `areModelsReady()`, `areTtsModelsReady()` और `ModelDownloadWorker.enqueue()` पर भी मौजूद है। हर पैक की अपनी कैश डायरेक्टरी है, इसलिए ऐप अंग्रेज़ी और जर्मन साथ-साथ इंस्टॉल रख सकता है। speech-core संख्याएँ, क्रमसूचक, तिथियाँ, समय, मुद्रा राशियाँ, इकाइयाँ और सामान्य संक्षेपाक्षर शब्दों में लिखता है, 50k शब्दों के जर्मन शब्दकोश से शब्द हल करता है और बाकी के लिए रूप-परिवर्तन, समास-विभाजन और नियम-आधारित G2P पर लौटता है। जर्मन पैक में ठीक एक आवाज़ होती है (`dm_martin` / `df_victoria`); कोई और भाषा देने पर वही आवाज़ रहती है, और बहुभाषी बंडल को `"de"` देने पर अंग्रेज़ी आवाज़ में जर्मन स्वनिम बोले जाते हैं।
 
 Kokoro और Supertonic दोनों डायरेक्ट सिंथेसिस में प्रति-कॉल वॉइस प्रीसेट स्वीकार करते हैं — `pipeline.synthesize("Hello", "en", "M1")` (Supertonic `F1`…`F5` / `M1`…`M5`; Kokoro `af_heart`, `ff_siwis`, …) — और यही आर्ग्युमेंट `synthesizeStreaming` और `SpeechSynthesizer` पर भी मौजूद है। प्रीसेट केवल उसी कॉल पर लागू होता है; इसे छोड़ दें (या `""` पास करें) तो इंजन की डिफ़ॉल्ट आवाज़ बनी रहती है, और अज्ञात id पर अपवाद (exception) फेंका जाता है।
 
@@ -310,7 +325,7 @@ adb shell settings put secure voice_recognition_service \
 
 ## सिस्टम टेक्स्ट-टू-स्पीच (`TextToSpeechService`)
 
-डेमो ऐप `audio.soniqo.speech.service.SpeechTextToSpeechService` भी उजागर करता है, इसलिए Android सेटिंग्स → सिस्टम → भाषाएँ और इनपुट → टेक्स्ट-टू-स्पीच आउटपुट में इस ऐप को चुन सकता है। यह पथ `ModelManager.ensureTtsModels()` और अलग `models_tts/` कैश का उपयोग करता है, इसलिए फ्रेमवर्क TTS पूर्ण VAD/STT/enhancer पाइपलाइन बंडल के बजाय केवल Kokoro assets डाउनलोड करता है।
+डेमो ऐप `audio.soniqo.speech.service.SpeechTextToSpeechService` भी उजागर करता है, इसलिए Android सेटिंग्स → सिस्टम → भाषाएँ और इनपुट → टेक्स्ट-टू-स्पीच आउटपुट में इस ऐप को चुन सकता है। यह पथ `ModelManager.ensureTtsModels()` और अलग `models_tts/` कैश का उपयोग करता है, इसलिए फ्रेमवर्क TTS पूर्ण VAD/STT/enhancer पाइपलाइन बंडल के बजाय केवल Kokoro assets डाउनलोड करता है। सेवा दो आवाज़ें देती है: अंग्रेज़ी (`soniqo-kokoro-af-heart`, en-US) और जर्मन (`soniqo-kokoro-dm-martin`, de-DE, Martin पैक)। हर भाषा अपना बंडल पहली बार अनुरोध होने पर अपनी कैश में डाउनलोड करती है।
 
 किसी अन्य ऐप से इंजन उजागर करने के लिए सेवा घोषित करें:
 

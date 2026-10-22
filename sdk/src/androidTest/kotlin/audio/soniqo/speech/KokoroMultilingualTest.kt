@@ -220,6 +220,61 @@ class KokoroMultilingualTest {
     }
 
     // -----------------------------------------------------------------
+    // German (kikiri-tts fine-tune, its own bundle)
+    // -----------------------------------------------------------------
+
+    @Test
+    fun germanPackSynthesizesWithItsBundledVoice() = runBlocking {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val germanDir = ModelManager.ensureTtsModels(
+            ctx, TtsModel.KOKORO_SHORT_TURN, kokoroPack = KokoroPack.GERMAN_MARTIN,
+        )
+        assertNotEquals("The German pack must not share the multilingual cache", modelDir, germanDir)
+        assertTrue(File(germanDir, "dict_de.json").isFile)
+        val voice = File(germanDir, "voices/dm_martin.bin")
+        assertTrue("German voice should be downloaded", voice.isFile)
+        assertEquals("Voice must contain one 256-float style vector", 1024L, voice.length())
+
+        val synthesizer = SpeechSynthesizer(
+            SpeechSynthesizerConfig(
+                modelDir = germanDir,
+                useNnapi = false,
+                ttsModel = TtsModel.KOKORO_SHORT_TURN,
+            )
+        )
+        try {
+            // Numbers, a date and an abbreviation exercise the German text
+            // normalizer; the umlauts and ß the German G2P.
+            val result = synthesizer.synthesize(
+                "Guten Tag! Am 3. Oktober um 18:30 Uhr liegen die Bücher auf dem großen Tisch, z.B. 2 Stück.",
+                "de",
+            )
+            assertEquals(24_000, result.sampleRate)
+            assertTrue("German TTS output should not be empty", result.pcm16.isNotEmpty())
+            assertTrue(
+                "German TTS output should contain non-zero PCM",
+                result.pcm16.any { it != 0.toByte() },
+            )
+            assertTrue(
+                "German TTS output is suspiciously short (${result.pcm16.size} bytes)",
+                result.pcm16.size >= 48_000,
+            )
+            // The bundle's single voice is also addressable by name, and an
+            // unknown preset still throws.
+            val explicit = synthesizer.synthesize("Hallo Welt.", "de", "dm_martin")
+            assertTrue(explicit.pcm16.isNotEmpty())
+            try {
+                synthesizer.synthesize("Hallo Welt.", "de", "af_heart")
+                fail("af_heart is not part of the German pack")
+            } catch (_: RuntimeException) {
+                // expected
+            }
+        } finally {
+            synthesizer.close()
+        }
+    }
+
+    // -----------------------------------------------------------------
     // Hindi (Devanagari)
     // -----------------------------------------------------------------
 

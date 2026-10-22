@@ -32,6 +32,7 @@
 | [Nemotron-3.5 multilingual](https://soniqo.audio/ru/guides/nemotron) | Потоковый STT с управлением через промпт (опционально) | [~721 МБ](https://huggingface.co/soniqo/Nemotron-3.5-ASR-Streaming-Multilingual-0.6B-LiteRT-INT8) | ещё не измерено | более 100 (включая zh) |
 | [Canary 180M Flash](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | Офлайн STT + перевод (опционально) | [273 MB](https://huggingface.co/soniqo/Canary-180M-Flash-ONNX) | ~780 MB | 4 (en, de, es, fr) |
 | [Kokoro 82M](https://soniqo.audio/ru/guides/kokoro/android) | Синтез речи (по умолчанию) | [330 МБ](https://huggingface.co/soniqo/Kokoro-82M-ONNX) | 640 МБ | 8 (en, fr, es, it, pt, hi, ja, zh) |
+| [Kokoro 82M немецкий](https://huggingface.co/soniqo/Kokoro-82M-German-Martin-ONNX) | Немецкий синтез речи (необязательные голосовые пакеты) | [170 МБ](https://huggingface.co/soniqo/Kokoro-82M-German-Martin-ONNX) на голос | 640 МБ | de (Martin, [Victoria](https://huggingface.co/soniqo/Kokoro-82M-German-Victoria-ONNX)) |
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | Потоковый синтез речи (опционально, фиксированный голос Alba) | ~126 МБ | ещё не измерено | Английский |
 | [Supertonic-3](https://soniqo.audio/ru/guides/supertonic) | Синтез речи (LiteRT, flow-matching, G2P-free, 44,1 кГц) | [~380 МБ](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 МБ | 31 |
 | [Silero VAD v5](https://soniqo.audio/ru/guides/vad/android) | Определение голосовой активности | [2 МБ](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 МБ | Любой |
@@ -67,6 +68,20 @@ val config = SpeechConfig(
 **Supertonic-3** — это опциональный многоязычный TTS повышенного качества: выберите его через `SpeechConfig(ttsModel = TtsModel.SUPERTONIC)` (требуется бэкенд LiteRT). Хост выполняет его четыре неавторегрессионных flow-matching-графа на устройстве на частоте 44,1 кГц; фронтенд работает G2P-free (NFKD + индекс Unicode — без фонемизатора), поэтому все 31 язык проходят через один путь.
 
 Длинные предложения: в бандл также входит опциональная пара графов с латентным окном L=128 (`vector_estimator_L128.tflite` + `vocoder_L128.tflite`, +341 МБ). Скачайте её через `ModelDownloadWorker.enqueue(context, ttsModel = TtsModel.SUPERTONIC, supertonicLatentBuckets = true)` (или тот же флаг у `ModelManager.ensureTtsModels`), и speech-core синтезирует предложение длиннее базового окна в 4,5 с за один проход, не разбивая его; пара загружается при первом использовании (+~360 МБ RSS). По умолчанию выключено.
+
+**Немецкий Kokoro** — это пара необязательных голосовых пакетов, а не девятый голос многоязычного набора: Martin (мужской) и Victoria (женский) — дообученные [kikiri-tts](https://huggingface.co/kikiri-tts) версии Kokoro-82M, каждая со своим набором весов на 162 МБ, обученным только на немецких фонемах. Выберите один через `KokoroPack` при загрузке и синтезируйте с `language = "de"`:
+
+```kotlin
+val modelDir = ModelManager.ensureTtsModels(
+    context,
+    ttsModel = TtsModel.KOKORO_SHORT_TURN,
+    kokoroPack = KokoroPack.GERMAN_MARTIN, // or GERMAN_VICTORIA
+)
+val tts = SpeechSynthesizer(SpeechSynthesizerConfig(modelDir = modelDir))
+val audio = tts.synthesize("Am 3. Oktober um 18:30 Uhr kostet es 12,80 €.", "de")
+```
+
+Тот же аргумент `kokoroPack` есть у `ModelManager.ensureModels()`, `areModelsReady()`, `areTtsModelsReady()` и `ModelDownloadWorker.enqueue()`. У каждого пакета свой каталог кэша, поэтому приложение может держать английский и немецкий установленными одновременно. speech-core проговаривает числа, порядковые числительные, даты, время, суммы, единицы и распространённые сокращения, разбирает слова по немецкому словарю на 50k слов, а для остального использует словоизменение, разбиение сложных слов и G2P по правилам. В немецком пакете ровно один голос (`dm_martin` / `df_victoria`); другой язык оставляет этот голос, а `"de"` в многоязычном наборе озвучивает немецкие фонемы английским голосом.
 
 Kokoro и Supertonic принимают пресет голоса на каждый вызов прямого синтеза — `pipeline.synthesize("Hello", "en", "M1")` (Supertonic `F1`…`F5` / `M1`…`M5`; Kokoro `af_heart`, `ff_siwis`, …) — тот же аргумент есть у `synthesizeStreaming` и `SpeechSynthesizer`. Пресет действует только для этого вызова; опустите его (или передайте `""`), чтобы сохранить голос движка по умолчанию, а неизвестный id вызывает исключение.
 
@@ -314,7 +329,7 @@ adb shell settings put secure voice_recognition_service \
 
 ## Системный синтез речи (`TextToSpeechService`)
 
-Демо-приложение также публикует `audio.soniqo.speech.service.SpeechTextToSpeechService`, поэтому Android может выбрать приложение в Настройки → Система → Языки и ввод → Синтез речи. Этот путь использует `ModelManager.ensureTtsModels()` и отдельный кэш `models_tts/`, поэтому framework TTS загружает только ресурсы Kokoro, а не полный пакет VAD/STT/enhancer.
+Демо-приложение также публикует `audio.soniqo.speech.service.SpeechTextToSpeechService`, поэтому Android может выбрать приложение в Настройки → Система → Языки и ввод → Синтез речи. Этот путь использует `ModelManager.ensureTtsModels()` и отдельный кэш `models_tts/`, поэтому framework TTS загружает только ресурсы Kokoro, а не полный пакет VAD/STT/enhancer. Сервис предлагает два голоса: английский (`soniqo-kokoro-af-heart`, en-US) и немецкий (`soniqo-kokoro-dm-martin`, de-DE, пакет Martin). Каждый язык загружает свой набор в собственный кэш при первом запросе от приложения.
 
 Чтобы открыть движок из другого приложения, объявите сервис:
 

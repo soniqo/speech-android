@@ -233,6 +233,84 @@ class ModelManagerManifestTest {
     }
 
     @Test
+    fun `german kokoro pack downloads its own single-voice bundle`() {
+        val martin = ModelManager.ttsModels(TtsModel.KOKORO_SHORT_TURN, kokoroPack = KokoroPack.GERMAN_MARTIN)
+        assertEquals(
+            listOf(
+                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "kokoro-e2e.onnx"),
+                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "kokoro-e2e-realtime.onnx"),
+                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "kokoro-e2e.onnx.data"),
+                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "vocab_index.json"),
+                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "dict_de.json"),
+                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "voices/dm_martin.bin"),
+            ),
+            martin,
+        )
+        val victoria = ModelManager.ttsModels(TtsModel.KOKORO, kokoroPack = KokoroPack.GERMAN_VICTORIA)
+        assertTrue(victoria.all { it.repo == "Kokoro-82M-German-Victoria-ONNX" })
+        assertTrue(victoria.any { it.filename == "voices/df_victoria.bin" })
+        // The German voices were trained with hexgrad's token table, so the
+        // bundle's own vocab_index.json replaces the multilingual one; the
+        // English dictionaries are not needed.
+        assertFalse(martin.any { it.filename.startsWith("us_") })
+        assertFalse(martin.any { it.repo == "Kokoro-82M-ONNX" })
+        // Pipeline manifests pick the same files up.
+        val pipeline = ModelManager.models(ModelPrecision.INT8, kokoroPack = KokoroPack.GERMAN_MARTIN)
+        assertTrue(pipeline.containsAll(martin))
+        assertFalse(pipeline.any { it.repo == "Kokoro-82M-ONNX" })
+        // Other TTS engines ignore the pack.
+        assertEquals(
+            ModelManager.ttsModels(TtsModel.POCKET),
+            ModelManager.ttsModels(TtsModel.POCKET, kokoroPack = KokoroPack.GERMAN_MARTIN),
+        )
+    }
+
+    @Test
+    fun `german kokoro pack keeps its own caches and worker name`() {
+        assertEquals("models_tts", ModelManager.ttsModelDirName(TtsModel.KOKORO_SHORT_TURN))
+        assertEquals(
+            "models_tts-kokoro_de_martin",
+            ModelManager.ttsModelDirName(TtsModel.KOKORO_SHORT_TURN, KokoroPack.GERMAN_MARTIN),
+        )
+        assertEquals("models_tts", ModelManager.ttsModelDirName(TtsModel.SUPERTONIC, KokoroPack.GERMAN_MARTIN))
+        assertNotEquals(
+            ModelManager.ttsModelSetKey(TtsModel.KOKORO_SHORT_TURN),
+            ModelManager.ttsModelSetKey(TtsModel.KOKORO_SHORT_TURN, KokoroPack.GERMAN_MARTIN),
+        )
+        assertNotEquals(
+            ModelManager.ttsModelSetKey(TtsModel.KOKORO_SHORT_TURN, KokoroPack.GERMAN_MARTIN),
+            ModelManager.ttsModelSetKey(TtsModel.KOKORO_SHORT_TURN, KokoroPack.GERMAN_VICTORIA),
+        )
+        assertEquals("models", modelDirName())
+        assertEquals(
+            "models-int8-parakeet_eou-onnx-kokoro_de_martin",
+            ModelManager.modelDirName(
+                ModelPrecision.INT8, SttModel.PARAKEET_EOU, SttBackend.ONNX,
+                TtsModel.KOKORO_SHORT_TURN, KokoroPack.GERMAN_MARTIN,
+            ),
+        )
+        assertNotEquals(
+            modelSetKey(),
+            ModelManager.modelSetKey(
+                ModelPrecision.INT8, SttModel.PARAKEET_EOU, SttBackend.ONNX,
+                TtsModel.KOKORO_SHORT_TURN, KokoroPack.GERMAN_MARTIN,
+            ),
+        )
+        assertEquals(ModelDownloadWorker.UNIQUE_NAME, ModelDownloadWorker.uniqueName())
+        assertNotEquals(
+            ModelDownloadWorker.UNIQUE_NAME,
+            ModelDownloadWorker.uniqueName(kokoroPack = KokoroPack.GERMAN_MARTIN),
+        )
+        assertNotEquals(
+            ModelDownloadWorker.uniqueName(kokoroPack = KokoroPack.GERMAN_MARTIN),
+            ModelDownloadWorker.uniqueName(kokoroPack = KokoroPack.GERMAN_VICTORIA),
+        )
+        assertEquals(KokoroPack.MULTILINGUAL, KokoroPack.valueOf("MULTILINGUAL"))
+        assertEquals("dm_martin", KokoroPack.GERMAN_MARTIN.defaultVoice)
+        assertEquals("df_victoria", KokoroPack.GERMAN_VICTORIA.defaultVoice)
+    }
+
+    @Test
     fun `tts-only model set key is separate from pipeline cache key`() {
         assertNotEquals(
             modelSetKey(ttsModel = TtsModel.KOKORO),

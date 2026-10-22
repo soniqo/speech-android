@@ -34,6 +34,29 @@ enum class LlmModel {
 internal val TtsModel.isKokoro: Boolean
     get() = this == TtsModel.KOKORO || this == TtsModel.KOKORO_SHORT_TURN
 
+/**
+ * Which Kokoro weight bundle [ModelManager] downloads for [TtsModel.KOKORO] /
+ * [TtsModel.KOKORO_SHORT_TURN]. [MULTILINGUAL] is the upstream hexgrad model
+ * with one voice for each of its eight languages. The German packs are the
+ * kikiri-tts fine-tunes (Apache 2.0): a separate 162 MB weight set with a
+ * single voice each, trained on German phonemes only, so an app that speaks
+ * German picks one of them. Each pack has its own cache directory, and the
+ * engine keeps the pack's voice for every language it is asked to speak. The
+ * value is ignored for Supertonic and Pocket.
+ */
+enum class KokoroPack(
+    /** Hugging Face repository under the soniqo organization. */
+    internal val repo: String,
+    /** The pack's default voice id, as accepted by `synthesize(text, language, voice)`. */
+    val defaultVoice: String,
+    /** Stable cache-key / directory suffix. */
+    internal val cacheName: String,
+) {
+    MULTILINGUAL("Kokoro-82M-ONNX", "af_heart", "KOKORO"),
+    GERMAN_MARTIN("Kokoro-82M-German-Martin-ONNX", "dm_martin", "KOKORO_DE_MARTIN"),
+    GERMAN_VICTORIA("Kokoro-82M-German-Victoria-ONNX", "df_victoria", "KOKORO_DE_VICTORIA"),
+}
+
 /** What the pipeline does after a completed transcription. ECHO speaks the
  *  transcript back via TTS (demo/testing); TRANSCRIBE_ONLY emits
  *  TranscriptionCompleted and returns to idle — for dictation or an
