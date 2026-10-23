@@ -4,10 +4,21 @@ on:
   push:
     tags:
       - 'v*'
+  # Finishes a tag whose run stopped part-way, for example when Maven Central
+  # served the artifact after the availability wait gave up.
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing v* tag to build and publish
+        required: true
+        type: string
 
 permissions:
   contents: write
   packages: write
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
 jobs:
   build:
@@ -16,7 +27,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
           submodules: recursive
+
+      - name: Verify release tag checkout
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(git tag --points-at HEAD --list "$RELEASE_TAG")" = "$RELEASE_TAG"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -34,7 +52,7 @@ jobs:
 
       - name: Extract version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: echo "VERSION=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Verify documented dependency version
         env:
@@ -79,7 +97,23 @@ jobs:
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
 
+      # Maven Central refuses a version twice, so a re-run of a tag that is
+      # already published skips the upload and goes on to the later steps.
+      - name: Check Maven Central for this version
+        id: central
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          artifact_url="https://repo1.maven.org/maven2/audio/soniqo/speech/${VERSION}/speech-${VERSION}.pom"
+          if curl --fail --silent --output /dev/null "$artifact_url"; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "speech ${VERSION} is already on Maven Central; skipping the upload"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to Maven Central
+        if: steps.central.outputs.published != 'true'
         run: ./gradlew :sdk:publishAndReleaseToMavenCentral --no-configuration-cache -PVERSION_NAME=${{ steps.version.outputs.VERSION }}
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
@@ -94,12 +128,13 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
           artifact_url="https://repo1.maven.org/maven2/audio/soniqo/speech/${VERSION}/speech-${VERSION}.pom"
-          for attempt in {1..40}; do
+          # Up to 30 minutes: 0.0.25 took longer than the earlier 10.
+          for attempt in {1..120}; do
             if curl --fail --silent --output /dev/null "$artifact_url"; then
               echo "Maven Central artifact is available: ${artifact_url}"
               exit 0
             fi
-            echo "Waiting for Maven Central availability (${attempt}/40)..."
+            echo "Waiting for Maven Central availability (${attempt}/120)..."
             sleep 15
           done
           echo "::error::Maven Central artifact did not become available: ${artifact_url}"
@@ -117,6 +152,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             sdk/build/outputs/aar/sdk-release.aar
             app/build/outputs/apk/release/app-release.apk
