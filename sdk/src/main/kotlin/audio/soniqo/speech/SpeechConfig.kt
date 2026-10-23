@@ -51,10 +51,23 @@ enum class KokoroPack(
     val defaultVoice: String,
     /** Stable cache-key / directory suffix. */
     internal val cacheName: String,
+    /**
+     * Hugging Face revision every file of the pack is fetched at: the
+     * repository's packed-lstm branch, whose graphs predict upstream Kokoro's
+     * durations. Its graphs and weights file change together, so a cache filled
+     * at another revision has the pack's files refetched as a set.
+     */
+    internal val revision: String,
 ) {
-    MULTILINGUAL("Kokoro-82M-ONNX", "af_heart", "KOKORO"),
-    GERMAN_MARTIN("Kokoro-82M-German-Martin-ONNX", "dm_martin", "KOKORO_DE_MARTIN"),
-    GERMAN_VICTORIA("Kokoro-82M-German-Victoria-ONNX", "df_victoria", "KOKORO_DE_VICTORIA"),
+    MULTILINGUAL("Kokoro-82M-ONNX", "af_heart", "KOKORO", "b561586381f1b212a8d6bd2a46483e04f54f4ebf"),
+    GERMAN_MARTIN(
+        "Kokoro-82M-German-Martin-ONNX", "dm_martin", "KOKORO_DE_MARTIN",
+        "2f930df2e95cfc4a785e708eeea029a8e4f484d0",
+    ),
+    GERMAN_VICTORIA(
+        "Kokoro-82M-German-Victoria-ONNX", "df_victoria", "KOKORO_DE_VICTORIA",
+        "7a6c7a111aa2b45ee8a8d902c9a1eb17d5d52d06",
+    ),
 }
 
 /** What the pipeline does after a completed transcription. ECHO speaks the

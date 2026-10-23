@@ -86,6 +86,8 @@ class ModelManagerPlanningTest {
                 TtsModel.KOKORO_SHORT_TURN,
             )
         )
+        // The Kokoro files came from the pack's pinned revision.
+        File(dir, "kokoro-revision.txt").writeText(KokoroPack.MULTILINGUAL.revision)
     }
 
     @Test
@@ -118,6 +120,26 @@ class ModelManagerPlanningTest {
     }
 
     @Test
+    fun `a cache from before the Kokoro pin plans the Kokoro set again`() {
+        cacheDefaultSet()
+        writeValid(modelDir, "deepfilter.onnx", 8_608_859)
+        // No revision record: the Kokoro graphs came from main or an older pin
+        // and must be refetched with their weights file. Silero, Parakeet and
+        // DeepFilter stay cached.
+        File(modelDir, "kokoro-revision.txt").delete()
+        val prePin = ModelManager.plannedModelBytes(context)
+        assertFalse(ModelManager.areModelsReady(context))
+
+        // The same plan as a current cache whose Kokoro files are missing.
+        writeCurrentMarkers(modelDir)
+        ModelManager.models(ModelPrecision.INT8)
+            .filter { it.repo == KokoroPack.MULTILINGUAL.repo }
+            .forEach { File(modelDir, it.localFilename).delete() }
+        assertTrue(prePin > 0)
+        assertEquals(ModelManager.plannedModelBytes(context), prePin)
+    }
+
+    @Test
     fun `a cached legacy Kokoro vocab is the only file planned`() {
         cacheDefaultSet()
         writeValid(modelDir, "deepfilter.onnx", 8_608_859)
@@ -145,7 +167,7 @@ class ModelManagerPlanningTest {
             assertTrue(ModelManager.areModelsReady(context))
             assertEquals(1, server.requestCount)
             assertEquals(
-                "/soniqo/Kokoro-82M-ONNX/resolve/main/vocab_index.json",
+                "/soniqo/Kokoro-82M-ONNX/resolve/${KokoroPack.MULTILINGUAL.revision}/vocab_index.json",
                 server.takeRequest(1, TimeUnit.SECONDS)!!.path,
             )
             assertEquals(HEXGRAD_VOCAB, File(modelDir, "vocab_index.json").readText())
