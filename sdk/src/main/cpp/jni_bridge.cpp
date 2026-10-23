@@ -522,9 +522,17 @@ Java_audio_soniqo_speech_NativeBridge_nativeCreate(
                 dir + "/canary-decoder-int8.onnx",
                 dir + "/vocab.json",
                 nnapi);
-            if (lang != "auto" && !lang.empty() && !m->set_language(lang)) {
-                LOGI("Canary has no prompt token for '%s', keeping the bundle default",
-                     lang.c_str());
+            // The prompt names a source and a target language and translates
+            // when they differ. Setting only the source left the target at
+            // English, so German speech came back as an English translation.
+            // Both lookups use the same token table.
+            if (lang != "auto" && !lang.empty()) {
+                if (m->set_language(lang)) {
+                    m->set_target_language(lang);
+                } else {
+                    LOGI("Canary has no prompt token for '%s', keeping the bundle default",
+                         lang.c_str());
+                }
             }
             h->stt = std::move(m);
         } else if (sttModel == STT_PARAKEET_EOU) {
