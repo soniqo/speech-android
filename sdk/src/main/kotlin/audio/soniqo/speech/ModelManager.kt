@@ -53,6 +53,8 @@ object ModelManager {
     private const val MAX_RETRIES = 5
     private const val RETRY_DELAY_MS = 2000L
     private const val MODEL_SET_FILENAME = "model-set.txt"
+    /** The [KokoroPack.revision] the cached Kokoro files were fetched at. */
+    private const val KOKORO_REVISION_FILENAME = "kokoro-revision.txt"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -257,35 +259,35 @@ object ModelManager {
             // the FP16 external data like the multilingual bundle, and the
             // bundle carries its own vocab_index.json (the German voices were
             // trained with hexgrad's exact token table) and dict_de.json.
-            ModelFile(kokoroPack.repo, "kokoro-e2e.onnx"),
-            ModelFile(kokoroPack.repo, "kokoro-e2e-realtime.onnx"),
-            ModelFile(kokoroPack.repo, "kokoro-e2e.onnx.data"),
-            ModelFile(kokoroPack.repo, "vocab_index.json"),
-            ModelFile(kokoroPack.repo, "dict_de.json"),
-            ModelFile(kokoroPack.repo, "voices/${kokoroPack.defaultVoice}.bin"),
+            ModelFile(kokoroPack.repo, "kokoro-e2e.onnx", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "kokoro-e2e-realtime.onnx", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "kokoro-e2e.onnx.data", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "vocab_index.json", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "dict_de.json", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "voices/${kokoroPack.defaultVoice}.bin", kokoroPack.revision),
         ) else listOf(
             // Both graph profiles share one external weight blob. Keeping both
             // protos in the same cache makes profile switches a ~2.6 MB fetch,
             // never a second ~310 MB weights download.
-            ModelFile("Kokoro-82M-ONNX", "kokoro-e2e.onnx"),
-            ModelFile("Kokoro-82M-ONNX", "kokoro-e2e-realtime.onnx"),
-            ModelFile("Kokoro-82M-ONNX", "kokoro-e2e.onnx.data"),
-            ModelFile("Kokoro-82M-ONNX", "vocab_index.json"),
-            ModelFile("Kokoro-82M-ONNX", "us_gold.json"),
-            ModelFile("Kokoro-82M-ONNX", "us_silver.json"),
-            ModelFile("Kokoro-82M-ONNX", "dict_fr.json"),
-            ModelFile("Kokoro-82M-ONNX", "dict_es.json"),
-            ModelFile("Kokoro-82M-ONNX", "dict_it.json"),
-            ModelFile("Kokoro-82M-ONNX", "dict_pt.json"),
-            ModelFile("Kokoro-82M-ONNX", "dict_hi.json"),
-            ModelFile("Kokoro-82M-ONNX", "voices/af_heart.bin"),
-            ModelFile("Kokoro-82M-ONNX", "voices/ff_siwis.bin"),
-            ModelFile("Kokoro-82M-ONNX", "voices/ef_dora.bin"),
-            ModelFile("Kokoro-82M-ONNX", "voices/if_sara.bin"),
-            ModelFile("Kokoro-82M-ONNX", "voices/pf_dora.bin"),
-            ModelFile("Kokoro-82M-ONNX", "voices/hf_alpha.bin"),
-            ModelFile("Kokoro-82M-ONNX", "voices/jf_alpha.bin"),
-            ModelFile("Kokoro-82M-ONNX", "voices/zf_xiaobei.bin"),
+            ModelFile(kokoroPack.repo, "kokoro-e2e.onnx", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "kokoro-e2e-realtime.onnx", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "kokoro-e2e.onnx.data", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "vocab_index.json", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "us_gold.json", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "us_silver.json", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "dict_fr.json", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "dict_es.json", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "dict_it.json", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "dict_pt.json", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "dict_hi.json", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "voices/af_heart.bin", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "voices/ff_siwis.bin", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "voices/ef_dora.bin", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "voices/if_sara.bin", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "voices/pf_dora.bin", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "voices/hf_alpha.bin", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "voices/jf_alpha.bin", kokoroPack.revision),
+            ModelFile(kokoroPack.repo, "voices/zf_xiaobei.bin", kokoroPack.revision),
         )
         // Four LiteRT graphs + the G2P-free tokenizer assets + the 10-voice catalog,
         // plus the optional L=128 latent bucket (see [supertonicLatentBuckets]).
@@ -401,6 +403,7 @@ object ModelManager {
         val cached = versionFile.takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0
         if (cached < MODEL_VERSION) return false
         if (cachedModelSet(dir) != modelSetKey(precision, sttModel, sttBackend, ttsModel, kokoroPack)) return false
+        if (ttsModel.isKokoro && !isKokoroCacheCurrent(dir, kokoroPack)) return false
 
         val fileList = models(
             precision, sttModel, sttBackend, ttsModel,
@@ -435,6 +438,7 @@ object ModelManager {
         val cached = versionFile.takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0
         if (cached < MODEL_VERSION) return false
         if (cachedModelSet(dir) != ttsModelSetKey(ttsModel, kokoroPack)) return false
+        if (ttsModel.isKokoro && !isKokoroCacheCurrent(dir, kokoroPack)) return false
 
         return ttsModels(ttsModel, supertonicLatentBuckets, kokoroPack).all { model ->
             val dest = File(dir, model.localFilename)
@@ -576,7 +580,9 @@ object ModelManager {
             fileList
         }
 
+        if (ttsModel.isKokoro) dropStaleKokoroFiles(dir, allFiles, kokoroPack)
         downloadMissingModels(dir, allFiles, onProgress)
+        if (ttsModel.isKokoro) recordKokoroRevision(dir, kokoroPack)
 
         // Write manifest
         File(dir, "precision.txt").writeText(precision.name)
@@ -608,7 +614,10 @@ object ModelManager {
             File(dir, "voice_styles").mkdirs()
         }
 
-        downloadMissingModels(dir, ttsModels(ttsModel, supertonicLatentBuckets, kokoroPack), onProgress)
+        val files = ttsModels(ttsModel, supertonicLatentBuckets, kokoroPack)
+        if (ttsModel.isKokoro) dropStaleKokoroFiles(dir, files, kokoroPack)
+        downloadMissingModels(dir, files, onProgress)
+        if (ttsModel.isKokoro) recordKokoroRevision(dir, kokoroPack)
 
         File(dir, "precision.txt").writeText("TTS")
         versionFile.writeText(MODEL_VERSION.toString())
@@ -970,6 +979,7 @@ object ModelManager {
     ): Long {
         val dir = modelDirFile(context, precision, sttModel, sttBackend, ttsModel, kokoroPack)
         val stale = cacheIsStale(dir, modelSetKey(precision, sttModel, sttBackend, ttsModel, kokoroPack))
+        val kokoroStale = ttsModel.isKokoro && !isKokoroCacheCurrent(dir, kokoroPack)
         return plannedBytes(
             dir,
             models(
@@ -979,6 +989,7 @@ object ModelManager {
                 kokoroPack = kokoroPack,
             ),
             stale,
+            refetch = { kokoroStale && it.repo == kokoroPack.repo },
         )
     }
 
@@ -995,12 +1006,46 @@ object ModelManager {
         return plannedBytes(dir, llmModels(llmModel), stale)
     }
 
-    private fun plannedBytes(dir: File, files: List<ModelFile>, stale: Boolean): Long =
+    private fun plannedBytes(
+        dir: File,
+        files: List<ModelFile>,
+        stale: Boolean,
+        refetch: (ModelFile) -> Boolean = { false },
+    ): Long =
         files.sumOf { model ->
             val dest = File(dir, model.localFilename)
-            if (!stale && dest.exists() && isValidModel(dest, model.filename, model.repo)) 0L
+            if (!stale && !refetch(model) && dest.exists() && isValidModel(dest, model.filename, model.repo)) 0L
             else expectedBytes(model)
         }
+
+    /**
+     * True when [dir]'s Kokoro files were fetched at [pack]'s pinned revision.
+     * A pack's graphs and weights file change together, so files cached from
+     * main or an older pin must be refetched as a set rather than mixed.
+     */
+    @VisibleForTesting
+    internal fun isKokoroCacheCurrent(dir: File, pack: KokoroPack): Boolean =
+        File(dir, KOKORO_REVISION_FILENAME).takeIf { it.exists() }?.readText()?.trim() == pack.revision
+
+    /**
+     * Deletes [pack]'s files, and their partial downloads, from [dir] when
+     * they come from another revision, so the download loop fetches them again
+     * together. The directory's other models stay cached: an install that
+     * predates the pin refetches ~170 MB of Kokoro, not the whole set.
+     */
+    @VisibleForTesting
+    internal fun dropStaleKokoroFiles(dir: File, files: List<ModelFile>, pack: KokoroPack) {
+        if (isKokoroCacheCurrent(dir, pack)) return
+        for (model in files) {
+            if (model.repo != pack.repo) continue
+            File(dir, model.localFilename).delete()
+            File(dir, "${model.localFilename}.tmp").delete()
+        }
+    }
+
+    private fun recordKokoroRevision(dir: File, pack: KokoroPack) {
+        File(dir, KOKORO_REVISION_FILENAME).writeText(pack.revision)
+    }
 
     private fun cacheIsStale(dir: File, wantedModelSet: String): Boolean {
         if (!dir.exists()) return true

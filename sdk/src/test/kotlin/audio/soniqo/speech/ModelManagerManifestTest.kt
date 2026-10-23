@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.io.RandomAccessFile
 import java.nio.file.Files
 
@@ -145,25 +146,25 @@ class ModelManagerManifestTest {
 
         assertEquals(
             listOf(
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "kokoro-e2e.onnx"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "kokoro-e2e-realtime.onnx"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "kokoro-e2e.onnx.data"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "vocab_index.json"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "us_gold.json"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "us_silver.json"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "dict_fr.json"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "dict_es.json"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "dict_it.json"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "dict_pt.json"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "dict_hi.json"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/af_heart.bin"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/ff_siwis.bin"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/ef_dora.bin"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/if_sara.bin"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/pf_dora.bin"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/hf_alpha.bin"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/jf_alpha.bin"),
-                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/zf_xiaobei.bin"),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "kokoro-e2e.onnx", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "kokoro-e2e-realtime.onnx", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "kokoro-e2e.onnx.data", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "vocab_index.json", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "us_gold.json", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "us_silver.json", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "dict_fr.json", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "dict_es.json", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "dict_it.json", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "dict_pt.json", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "dict_hi.json", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/af_heart.bin", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/ff_siwis.bin", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/ef_dora.bin", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/if_sara.bin", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/pf_dora.bin", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/hf_alpha.bin", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/jf_alpha.bin", KokoroPack.MULTILINGUAL.revision),
+                ModelManager.ModelFile("Kokoro-82M-ONNX", "voices/zf_xiaobei.bin", KokoroPack.MULTILINGUAL.revision),
             ),
             files,
         )
@@ -255,16 +256,65 @@ class ModelManagerManifestTest {
     }
 
     @Test
+    fun `every kokoro file is fetched at its pack revision`() {
+        // The packed-lstm graphs and their weights file only work as a pair,
+        // so no file of a pack may track main.
+        for (pack in KokoroPack.values()) {
+            val files = ModelManager.ttsModels(TtsModel.KOKORO, kokoroPack = pack)
+            assertTrue(files.isNotEmpty())
+            assertTrue(pack.name, files.all { it.revision == pack.revision })
+            assertTrue(pack.name, pack.revision.matches(Regex("[0-9a-f]{40}")))
+            val pipeline = ModelManager.models(ModelPrecision.INT8, kokoroPack = pack)
+            assertTrue(pack.name, pipeline.filter { it.repo == pack.repo }.all { it.revision == pack.revision })
+        }
+    }
+
+    @Test
+    fun `kokoro files from another revision are refetched while other models stay`() {
+        val dir = Files.createTempDirectory("kokoro-revision").toFile()
+        try {
+            val files = ModelManager.models(ModelPrecision.INT8)
+            val kokoro = files.filter { it.repo == KokoroPack.MULTILINGUAL.repo }
+            val others = files.filterNot { it.repo == KokoroPack.MULTILINGUAL.repo }
+            assertTrue(kokoro.isNotEmpty() && others.isNotEmpty())
+            for (model in files) {
+                File(dir, model.localFilename).apply { parentFile?.mkdirs(); writeText("cached") }
+            }
+            File(dir, "kokoro-e2e.onnx.data.tmp").writeText("partial")
+
+            // A cache filled before the pin has no revision record.
+            assertFalse(ModelManager.isKokoroCacheCurrent(dir, KokoroPack.MULTILINGUAL))
+            ModelManager.dropStaleKokoroFiles(dir, files, KokoroPack.MULTILINGUAL)
+            assertTrue(kokoro.none { File(dir, it.localFilename).exists() })
+            assertFalse(File(dir, "kokoro-e2e.onnx.data.tmp").exists())
+            assertTrue(others.all { File(dir, it.localFilename).exists() })
+
+            // Once recorded, the same files are kept.
+            for (model in kokoro) File(dir, model.localFilename).writeText("fresh")
+            File(dir, "kokoro-revision.txt").writeText(KokoroPack.MULTILINGUAL.revision)
+            assertTrue(ModelManager.isKokoroCacheCurrent(dir, KokoroPack.MULTILINGUAL))
+            ModelManager.dropStaleKokoroFiles(dir, files, KokoroPack.MULTILINGUAL)
+            assertTrue(kokoro.all { File(dir, it.localFilename).exists() })
+
+            // A different pin is stale again.
+            File(dir, "kokoro-revision.txt").writeText("0".repeat(40))
+            assertFalse(ModelManager.isKokoroCacheCurrent(dir, KokoroPack.MULTILINGUAL))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `german kokoro pack downloads its own single-voice bundle`() {
         val martin = ModelManager.ttsModels(TtsModel.KOKORO_SHORT_TURN, kokoroPack = KokoroPack.GERMAN_MARTIN)
         assertEquals(
             listOf(
-                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "kokoro-e2e.onnx"),
-                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "kokoro-e2e-realtime.onnx"),
-                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "kokoro-e2e.onnx.data"),
-                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "vocab_index.json"),
-                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "dict_de.json"),
-                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "voices/dm_martin.bin"),
+                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "kokoro-e2e.onnx", KokoroPack.GERMAN_MARTIN.revision),
+                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "kokoro-e2e-realtime.onnx", KokoroPack.GERMAN_MARTIN.revision),
+                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "kokoro-e2e.onnx.data", KokoroPack.GERMAN_MARTIN.revision),
+                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "vocab_index.json", KokoroPack.GERMAN_MARTIN.revision),
+                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "dict_de.json", KokoroPack.GERMAN_MARTIN.revision),
+                ModelManager.ModelFile("Kokoro-82M-German-Martin-ONNX", "voices/dm_martin.bin", KokoroPack.GERMAN_MARTIN.revision),
             ),
             martin,
         )
