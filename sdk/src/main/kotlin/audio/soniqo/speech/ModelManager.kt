@@ -35,6 +35,7 @@ object ModelManager {
     private const val NEMOTRON_LITERT_INT8_REVISION = "v1.0.0"
     private const val NEMOTRON_LITERT_FP16_REVISION =
         "1503a9a1eb75b813b83ba65bf5e9fecea4a46091"
+    private const val VAP_REVISION = "v1.0.0"
     private const val SMART_TURN_REVISION = "b48fdbe20772bcec1fef02f4a1a355236ef6359e"
     // Core derives the stateful graph from this exact published FP32 file.
     private const val DEEPFILTER_REVISION = "63d8ba442ba900143c468b798e94a04009b2f0c9"
@@ -204,6 +205,13 @@ object ModelManager {
         }
     }
 
+    /** Stereo VAP bundle, kept separate from the pipeline's default models. */
+    @VisibleForTesting
+    internal fun vapModels(): List<ModelFile> =
+        listOf("vap.onnx", "config.json", "LICENSE", "NOTICE").map {
+            ModelFile("aufklarer/VAP-OTO-ONNX", it, VAP_REVISION)
+        }
+
     /** Streaming Sortformer 4-speaker diarizer. `config.json` travels with the
      *  graph: the native wrapper checks the graph against the chunk contexts
      *  and cache period it declares and refuses one it does not describe. */
@@ -340,6 +348,7 @@ object ModelManager {
     }
 
     data class ModelFile(
+        /** Bare repository name in the default organization, or owner/repository. */
         val repo: String,
         /** Path within the Hugging Face repository. */
         val filename: String,
@@ -709,6 +718,29 @@ object ModelManager {
     fun diarizerModelDir(context: Context): String =
         File(context.filesDir, "models_diarizer").absolutePath
 
+    /** Path to the [VoiceActivityProjection] bundle, without downloading. */
+    fun vapModelDir(context: Context): String = File(context.filesDir, "models_vap").absolutePath
+
+    /** True when the complete stereo VAP bundle is cached. */
+    fun areVapModelsReady(context: Context): Boolean = isResumableSetReady(
+        File(vapModelDir(context)), vapModelSetKey(), vapModels(),
+    )
+
+    /** Download only VAP, preserving partial downloads for a later retry. */
+    suspend fun ensureVapModels(
+        context: Context,
+        onProgress: ((Progress) -> Unit)? = null,
+    ): String = withContext(Dispatchers.IO) {
+        val dir = File(vapModelDir(context))
+        ensureResumableSet(dir, vapModelSetKey(), vapModels(), onProgress)
+        dir.absolutePath
+    }
+
+    /** Bytes still needed by [ensureVapModels]. */
+    fun plannedVapBytes(context: Context): Long = plannedResumableBytes(
+        File(vapModelDir(context)), vapModelSetKey(), vapModels(),
+    )
+
     /** Path to the [SpeakerEmbedder] model directory, without downloading. */
     fun speakerEmbeddingModelDir(context: Context): String =
         File(context.filesDir, "models_speaker_embedding").absolutePath
@@ -873,8 +905,10 @@ object ModelManager {
     }
 
     @VisibleForTesting
-    internal fun modelUrl(model: ModelFile, origin: String = endpoint): String =
-        "$origin/$MODEL_ORGANIZATION/${model.repo}/resolve/${model.revision}/${model.filename}"
+    internal fun modelUrl(model: ModelFile, origin: String = endpoint): String {
+        val repository = if ('/' in model.repo) model.repo else "$MODEL_ORGANIZATION/${model.repo}"
+        return "$origin/$repository/resolve/${model.revision}/${model.filename}"
+    }
 
     @VisibleForTesting
     internal fun normalizedEndpoint(value: String): String {
@@ -1191,6 +1225,9 @@ object ModelManager {
     ).joinToString("|")
 
     @VisibleForTesting
+    internal fun vapModelSetKey(): String = "v$MODEL_VERSION|profile=VAP|revision=$VAP_REVISION"
+
+    @VisibleForTesting
     internal fun speakerEmbeddingModelSetKey(): String = listOf(
         "v$MODEL_VERSION",
         "profile=SPEAKER_EMBEDDING",
@@ -1420,6 +1457,7 @@ object ModelManager {
         "joint.onnx.data" to 18_911_296L,
         "sortformer-default.onnx" to 474_630_246L,
         "ReDimNet2B6.onnx" to 51_223_453L,
+        "vap.onnx" to 39564833L,
     )
 
     /** Assumed size of a model file with no [EXPECTED_SIZES] entry. */
@@ -1484,7 +1522,8 @@ object ModelManager {
         "nemotron-multilingual-decoder.tflite" to 50_000_000L,  // ~60 MB
         "nemotron-multilingual-joint.tflite" to 30_000_000L,    // ~38 MB
         "sortformer-default.onnx" to 400_000_000L,       // ~475 MB
-        "ReDimNet2B6.onnx" to 45_000_000L,               // ~51 MB
+        "ReDimNet2B6.onnx" to 45_000_000L,
+        "vap.onnx" to 35_000_000L,                 // ~40 MB
     )
 
     /**

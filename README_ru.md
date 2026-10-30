@@ -10,6 +10,10 @@
 
 **[Демо APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk)** · **[APK Control Demo](https://github.com/soniqo/speech-android/releases/latest/download/control-demo-release.apk)** · **[Модели](https://huggingface.co/collections/aufklarer/speech-android-models-69bb8a156cac0b96a2247f26)** · **[speech-swift](https://github.com/soniqo/speech-swift)** (аналог для Apple) · **[speech-core](https://github.com/soniqo/speech-core)** (движок конвейера + сборка для Linux/встраиваемых систем)
 
+## Статьи
+
+- **2026-10-30** — [Измеряем голосовых агентов: смена реплик, вызовы инструментов и выразительная речь](https://soniqo.audio/blog/voice-agent-benchmarks)
+
 ## Демонстрация
 
 <p align="center">
@@ -36,6 +40,7 @@
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | Потоковый синтез речи (опционально, фиксированный голос Alba) | ~126 МБ | ещё не измерено | Английский |
 | [Supertonic-3](https://soniqo.audio/ru/guides/supertonic) | Синтез речи (LiteRT, flow-matching, G2P-free, 44,1 кГц) | [~380 МБ](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 МБ | 31 |
 | [Silero VAD v5](https://soniqo.audio/ru/guides/vad/android) | Определение голосовой активности | [2 МБ](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 МБ | Любой |
+| [VAP (otoSpeech)](docs/vap.md) | Прогноз речевой активности по двум каналам | [~40 MB](https://huggingface.co/aufklarer/VAP-OTO-ONNX) | — | Английский |
 | [Sortformer, 4 диктора](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | Потоковая диаризация дикторов (опционально) | [475 МБ](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | ещё не измерено | Любой |
 | [ReDimNet2-B6](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | Эмбеддинги дикторов (опционально) | [51 МБ](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | ещё не измерено | Любой |
 | [DeepFilterNet3](https://soniqo.audio/ru/guides/denoise/android) | Потоковое шумоподавление (по умолчанию) | [8.2 МиБ](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | ещё не измерено | Любой |
