@@ -10,6 +10,10 @@
 
 **[デモ APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk)** · **[Control Demo APK](https://github.com/soniqo/speech-android/releases/latest/download/control-demo-release.apk)** · **[モデル](https://huggingface.co/collections/aufklarer/speech-android-models-69bb8a156cac0b96a2247f26)** · **[speech-swift](https://github.com/soniqo/speech-swift)**(Apple 版)· **[speech-core](https://github.com/soniqo/speech-core)**(パイプラインエンジン + Linux/組み込みビルド)
 
+## 記事
+
+- **2026-10-30** — [音声エージェントを測る：発話交替、ツール呼び出し、表現豊かな音声](https://soniqo.audio/blog/voice-agent-benchmarks)
+
 ## デモ
 
 <p align="center">
@@ -36,6 +40,7 @@
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | ストリーミング音声合成(任意、固定 Alba 音声) | ~126 MB | 未計測 | 英語 |
 | [Supertonic-3](https://soniqo.audio/ja/guides/supertonic) | テキスト読み上げ(LiteRT、flow-matching、G2P-free、44.1 kHz) | [~380 MB](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 MB | 31 |
 | [Silero VAD v5](https://soniqo.audio/ja/guides/vad/android) | 音声活動検出 | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | 任意 |
+| [VAP (otoSpeech)](docs/vap.md) | 2チャネルの発話予測 | [~40 MB](https://huggingface.co/aufklarer/VAP-OTO-ONNX) | — | 英語 |
 | [Sortformer 4 話者](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | ストリーミング話者分離(任意) | [475 MB](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | 未計測 | 任意 |
 | [ReDimNet2-B6](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | 話者埋め込み(任意) | [51 MB](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | 未計測 | 任意 |
 | [DeepFilterNet3](https://soniqo.audio/ja/guides/denoise/android) | ストリーミングノイズ除去（既定） | [8.2 MiB](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | 未計測 | 任意 |

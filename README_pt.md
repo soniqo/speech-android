@@ -10,6 +10,10 @@ Reconhecimento de fala em streaming com baixa memória e um modelo TDT maior opc
 
 **[APK de demonstração](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk)** · **[APK do Control Demo](https://github.com/soniqo/speech-android/releases/latest/download/control-demo-release.apk)** · **[Modelos](https://huggingface.co/collections/aufklarer/speech-android-models-69bb8a156cac0b96a2247f26)** · **[speech-swift](https://github.com/soniqo/speech-swift)** (contraparte Apple) · **[speech-core](https://github.com/soniqo/speech-core)** (motor de pipeline + build Linux/embarcado)
 
+## Artigos
+
+- **2026-10-30** — [Avaliação de agentes de voz: alternância de turnos, chamadas de ferramentas e fala expressiva](https://soniqo.audio/blog/voice-agent-benchmarks)
+
 ## Demonstração
 
 <p align="center">
@@ -36,6 +40,7 @@ Este repositório é o **empacotamento Android**: SDK Kotlin, ponte JNI, app de 
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | Texto para fala em streaming (opcional, voz Alba fixa) | ~126 MB | ainda não medido | Inglês |
 | [Supertonic-3](https://soniqo.audio/pt/guides/supertonic) | Texto para fala (LiteRT, flow-matching, G2P-free, 44,1 kHz) | [~380 MB](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 MB | 31 |
 | [Silero VAD v5](https://soniqo.audio/pt/guides/vad/android) | Detecção de atividade vocal | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | Qualquer |
+| [VAP (otoSpeech)](docs/vap.md) | Previsão de fala em dois canais | [~40 MB](https://huggingface.co/aufklarer/VAP-OTO-ONNX) | — | Inglês |
 | [Sortformer 4 locutores](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | Diarização de locutores em streaming (opcional) | [475 MB](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | ainda não medido | Qualquer |
 | [ReDimNet2-B6](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | Embeddings de locutor (opcional) | [51 MB](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | ainda não medido | Qualquer |
 | [DeepFilterNet3](https://soniqo.audio/pt/guides/denoise/android) | Cancelamento de ruído em streaming (padrão) | [8.2 MiB](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | ainda não medido | Qualquer |

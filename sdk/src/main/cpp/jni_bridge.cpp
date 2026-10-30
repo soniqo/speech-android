@@ -9,6 +9,7 @@
 #include <speech_core/models/onnx_pocket_tts.h>
 #include <speech_core/models/onnx_redimnet_speaker_embedding.h>
 #include <speech_core/models/onnx_smart_turn.h>
+#include <speech_core/models/onnx_vap.h>
 #include <speech_core/models/onnx_sortformer_diarizer.h>
 #include <speech_core/models/onnx_zipformer_kws.h>
 #include <speech_core/models/parakeet_stt.h>
@@ -73,6 +74,11 @@ struct PipelineHandle {
 
 struct SynthesizerHandle {
     std::unique_ptr<speech_core::TTSInterface> tts;
+    std::mutex mutex;
+};
+
+struct VapHandle {
+    std::unique_ptr<speech_core::OnnxVap> model;
     std::mutex mutex;
 };
 
@@ -1601,4 +1607,55 @@ Java_audio_soniqo_speech_NativeBridge_nativeKeywordReset(JNIEnv* env, jobject, j
         reinterpret_cast<speech_core::OnnxZipformerKws*>(handle)->reset();
     } catch (const std::exception& e) { throw_native_failure(env, "Keyword reset failed", e); }
 }
+JNIEXPORT jlong JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeCreateVap(
+    JNIEnv* env, jobject, jstring modelDir, jboolean hardwareAcceleration) {
+    try {
+        if (!modelDir) throw std::invalid_argument("VAP model directory is required");
+        const auto directory = jstring_to_string(env, modelDir);
+        if (env->ExceptionCheck()) return 0;
+        auto handle = std::make_unique<VapHandle>();
+        handle->model = std::make_unique<speech_core::OnnxVap>(
+            directory + "/vap.onnx", hardwareAcceleration == JNI_TRUE);
+        return reinterpret_cast<jlong>(handle.release());
+    } catch (const std::exception& error) {
+        throw_native_failure(env, "VAP model failed", error);
+        return 0;
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeDestroyVap(JNIEnv*, jobject, jlong handle) {
+    delete reinterpret_cast<VapHandle*>(handle);
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeVapForecast(
+    JNIEnv* env, jobject, jlong raw_handle, jfloatArray user, jfloatArray agent,
+    jint count, jint sample_rate) {
+    try {
+        auto* handle = reinterpret_cast<VapHandle*>(raw_handle);
+        if (!handle || !handle->model) throw std::invalid_argument("VAP model is closed");
+        if (!user || !agent || count <= 0 || count > env->GetArrayLength(user)
+            || count > env->GetArrayLength(agent)) {
+            throw std::invalid_argument("VAP requires synchronized nonempty audio channels");
+        }
+        const auto length = std::min(count, static_cast<jint>(speech_core::OnnxVap::kWindowSamples));
+        std::vector<float> user_audio(length), agent_audio(length);
+        env->GetFloatArrayRegion(user, count - length, length, user_audio.data());
+        if (env->ExceptionCheck()) return nullptr;
+        env->GetFloatArrayRegion(agent, count - length, length, agent_audio.data());
+        if (env->ExceptionCheck()) return nullptr;
+        std::lock_guard<std::mutex> lock(handle->mutex);
+        const auto result = handle->model->forecast(
+            user_audio.data(), agent_audio.data(), static_cast<std::size_t>(length), sample_rate);
+        return float_array(env, {result.p_now[0], result.p_now[1],
+            result.p_future[0], result.p_future[1],
+            result.voice_activity[0], result.voice_activity[1]});
+    } catch (const std::exception& error) {
+        throw_native_failure(env, "VAP forecast failed", error);
+        return nullptr;
+    }
+}
+
 } // extern "C"

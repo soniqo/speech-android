@@ -10,6 +10,10 @@ Speicherarme Streaming-Spracherkennung und ein optionales größeres TDT-Modell,
 
 **[Demo-APK](https://github.com/soniqo/speech-android/releases/latest/download/app-release.apk)** · **[Control-Demo-APK](https://github.com/soniqo/speech-android/releases/latest/download/control-demo-release.apk)** · **[Modelle](https://huggingface.co/collections/aufklarer/speech-android-models-69bb8a156cac0b96a2247f26)** · **[speech-swift](https://github.com/soniqo/speech-swift)** (Apple-Pendant) · **[speech-core](https://github.com/soniqo/speech-core)** (Pipeline-Engine + Linux/Embedded-Build)
 
+## Artikel
+
+- **2026-10-30** — [Sprachagenten messen: Sprecherwechsel, Werkzeugaufrufe und ausdrucksstarke Sprache](https://soniqo.audio/blog/voice-agent-benchmarks)
+
 ## Demo
 
 <p align="center">
@@ -36,6 +40,7 @@ Dieses Repo ist das **Android-Packaging**: Kotlin-SDK, JNI-Bridge, Demo-App. Die
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | Streaming-Text-to-Speech (optional, feste Alba-Stimme) | ~126 MB | noch nicht gemessen | Englisch |
 | [Supertonic-3](https://soniqo.audio/de/guides/supertonic) | Text-to-Speech (LiteRT, Flow-Matching, G2P-frei, 44,1 kHz) | [~380 MB](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 MB | 31 |
 | [Silero VAD v5](https://soniqo.audio/de/guides/vad/android) | Sprachaktivitätserkennung | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | Beliebig |
+| [VAP (otoSpeech)](docs/vap.md) | Sprachprognosen für zwei Kanäle | [~40 MB](https://huggingface.co/aufklarer/VAP-OTO-ONNX) | — | Englisch |
 | [Sortformer 4 Sprecher](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | Streaming-Sprecherdiarisierung (optional) | [475 MB](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | noch nicht gemessen | Beliebig |
 | [ReDimNet2-B6](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | Sprecher-Embeddings (optional) | [51 MB](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | noch nicht gemessen | Beliebig |
 | [DeepFilterNet3](https://soniqo.audio/de/guides/denoise/android) | Streaming-Rauschunterdrückung (Standard) | [8.2 MiB](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | noch nicht gemessen | Beliebig |
