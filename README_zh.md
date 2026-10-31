@@ -40,7 +40,7 @@
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | 流式文本转语音(可选,固定 Alba 音色) | ~126 MB | 尚未测量 | 英语 |
 | [Supertonic-3](https://soniqo.audio/zh/guides/supertonic) | 文本转语音(LiteRT、流匹配、免 G2P、44.1 kHz) | [~380 MB](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 MB | 31 |
 | [Silero VAD v5](https://soniqo.audio/zh/guides/vad/android) | 语音活动检测 | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | 任意 |
-| [VAP (otoSpeech)](docs/vap.md) | 双通道语音活动预测 | [~40 MB](https://huggingface.co/aufklarer/VAP-OTO-ONNX) | — | 英语 |
+| [VAP (otoSpeech)](docs/vap.md) | 双通道语音活动预测 | [~40 MB](https://huggingface.co/soniqo/VAP-OTO-ONNX) | — | 英语 |
 | [Sortformer 4 说话人](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | 流式说话人分离(可选) | [475 MB](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | 尚未测量 | 任意 |
 | [ReDimNet2-B6](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | 说话人嵌入(可选) | [51 MB](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | 尚未测量 | 任意 |
 | [DeepFilterNet3](https://soniqo.audio/zh/guides/denoise/android) | 流式噪声消除（默认） | [8.2 MiB](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | 尚未测量 | 任意 |

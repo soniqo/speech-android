@@ -40,7 +40,7 @@ Android के लिए ऑन-डिवाइस स्पीच SDK, [ONNX Ru
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | स्ट्रीमिंग टेक्स्ट-टू-स्पीच (वैकल्पिक, स्थिर Alba आवाज़) | ~126 MB | अभी मापा नहीं गया | अंग्रेज़ी |
 | [Supertonic-3](https://soniqo.audio/hi/guides/supertonic) | टेक्स्ट-टू-स्पीच (LiteRT, फ़्लो-मैचिंग, G2P-free, 44.1 kHz) | [~380 MB](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 MB | 31 |
 | [Silero VAD v5](https://soniqo.audio/hi/guides/vad/android) | वॉयस एक्टिविटी डिटेक्शन | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | कोई भी |
-| [VAP (otoSpeech)](docs/vap.md) | दो चैनल की वाणी गतिविधि का अनुमान | [~40 MB](https://huggingface.co/aufklarer/VAP-OTO-ONNX) | — | अंग्रेज़ी |
+| [VAP (otoSpeech)](docs/vap.md) | दो चैनल की वाणी गतिविधि का अनुमान | [~40 MB](https://huggingface.co/soniqo/VAP-OTO-ONNX) | — | अंग्रेज़ी |
 | [Sortformer 4-स्पीकर](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | स्ट्रीमिंग स्पीकर डायराइज़ेशन (वैकल्पिक) | [475 MB](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | अभी मापा नहीं गया | कोई भी |
 | [ReDimNet2-B6](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | स्पीकर एम्बेडिंग (वैकल्पिक) | [51 MB](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | अभी मापा नहीं गया | कोई भी |
 | [DeepFilterNet3](https://soniqo.audio/hi/guides/denoise/android) | स्ट्रीमिंग शोर रद्दीकरण (डिफ़ॉल्ट) | [8.2 MiB](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | अभी मापा नहीं गया | कोई भी |

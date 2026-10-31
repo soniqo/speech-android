@@ -40,7 +40,7 @@ This repo is the **Android packaging**: Kotlin SDK, JNI bridge, demo app. The C+
 | [Pocket TTS 100M](https://huggingface.co/soniqo/Pocket-TTS-100M-ONNX-INT8) | Streaming text-to-speech (optional, fixed Alba voice) | ~126 MB | not yet measured | English |
 | [Supertonic-3](https://soniqo.audio/guides/supertonic) | Text-to-speech (LiteRT, flow-matching, G2P-free, 44.1 kHz) | [~380 MB](https://huggingface.co/soniqo/Supertonic-3-LiteRT) | 832 MB | 31 |
 | [Silero VAD v5](https://soniqo.audio/guides/vad/android) | Voice activity detection | [2 MB](https://huggingface.co/soniqo/Silero-VAD-v5-ONNX) | <10 MB | Any |
-| [VAP (otoSpeech)](docs/vap.md) | Two-channel speech forecasts | [~40 MB](https://huggingface.co/aufklarer/VAP-OTO-ONNX) | — | English |
+| [VAP (otoSpeech)](docs/vap.md) | Two-channel speech forecasts | [~40 MB](https://huggingface.co/soniqo/VAP-OTO-ONNX) | — | English |
 | [Sortformer 4-speaker](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | Streaming speaker diarization (optional) | [475 MB](https://huggingface.co/soniqo/Sortformer-Diarization-4spk-ONNX) | not yet measured | Any |
 | [ReDimNet2-B6](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | Speaker embeddings (optional) | [51 MB](https://huggingface.co/soniqo/ReDimNet2-B6-ONNX-FP32) | not yet measured | Any |
 | [DeepFilterNet3](https://soniqo.audio/guides/denoise/android) | Streaming noise cancellation (default) | [8.2 MiB](https://huggingface.co/soniqo/DeepFilterNet3-ONNX) | not yet measured | Any |
