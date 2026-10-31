@@ -209,7 +209,7 @@ object ModelManager {
     @VisibleForTesting
     internal fun vapModels(): List<ModelFile> =
         listOf("vap.onnx", "config.json", "LICENSE", "NOTICE").map {
-            ModelFile("aufklarer/VAP-OTO-ONNX", it, VAP_REVISION)
+            ModelFile("soniqo/VAP-OTO-ONNX", it, VAP_REVISION)
         }
 
     /** Streaming Sortformer 4-speaker diarizer. `config.json` travels with the
