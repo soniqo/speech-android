@@ -132,6 +132,11 @@ internal object NativeBridge {
     external fun nativeTranscriberWordTexts(handle: Long): Array<String>?
     external fun nativeTranscriberWordTimes(handle: Long): FloatArray?
 
+    // Bounded whole-utterance Parakeet TDT v3. Shares only result accessors and
+    // destruction with TranscriberHandle; never uses its Nemotron stream calls.
+    external fun nativeCreateParakeetTranscriber(modelDir: String): Long
+    external fun nativeParakeetTranscribe(handle: Long, samples: FloatArray, count: Int): String?
+
     external fun nativeCreateDiarizer(modelDir: String, hardwareAcceleration: Boolean): Long
     external fun nativeDestroyDiarizer(handle: Long)
     // [frames x speakers] probabilities finalised by this call, row by row.

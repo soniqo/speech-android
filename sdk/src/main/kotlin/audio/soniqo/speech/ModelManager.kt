@@ -10,6 +10,7 @@ import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 /**
@@ -33,6 +34,14 @@ object ModelManager {
     // mismatch on a device that happened to download after the change.
     private const val CANARY_REVISION = "7e9f3f9cc47a877f47bda6ace292111c143be0fe"
     private const val NEMOTRON_LITERT_INT8_REVISION = "v1.0.0"
+    internal const val PARAKEET_TRANSCRIBER_REVISION = "519efaaa53afb1ee4c8fa7f6e611908f030f1eba"
+    private const val PARAKEET_VERIFIED = "verified-sha256.txt"
+    internal val PARAKEET_TRANSCRIBER_HASHES = linkedMapOf(
+        "parakeet-encoder-int8.onnx" to "dd8257b9e75827b0ffdfffd712426f756faecd220714c6176b3233d41d3064d9",
+        "parakeet-decoder-joint-int8.onnx" to "f7c272dcb8e0cbc5c40f05ae5275d6d95bb7b63316b26f56a55fca9bfec44894",
+        "vocab.json" to "18494370fcd171912894d494a45936bda67f2269e8249926066560e2a95b0fdf",
+    )
+    private val parakeetDownloadLock = Any()
     private const val NEMOTRON_LITERT_FP16_REVISION =
         "1503a9a1eb75b813b83ba65bf5e9fecea4a46091"
     private const val VAP_REVISION = "v1.0.0"
@@ -706,6 +715,73 @@ object ModelManager {
             llmModels(llmModel).first { it.filename.endsWith(".litertlm") }.filename,
         ).absolutePath
     }
+
+    /** Standalone Parakeet TDT v3 INT8, separate from every pipeline/Nemotron cache. */
+    fun parakeetTranscriberModelDir(context: Context): String =
+        File(context.filesDir, "models_transcriber-parakeet-tdt-v3-int8").absolutePath
+
+    internal fun parakeetTranscriberModels(): List<ModelFile> =
+        PARAKEET_TRANSCRIBER_HASHES.keys.map {
+            ModelFile("Parakeet-TDT-v3-ONNX", it, PARAKEET_TRANSCRIBER_REVISION)
+        }
+
+    private fun parakeetSetKey() = "parakeet-tdt-v3-int8:$PARAKEET_TRANSCRIBER_REVISION"
+
+    // Hashes are checked after download. Readiness checks the verified files'
+    // identities rather than re-reading ~935 MB on each UI/preparation query.
+    private fun parakeetFileIdentity(dir: File): String = buildString {
+        append(parakeetSetKey()).append('\n')
+        for ((name, hash) in PARAKEET_TRANSCRIBER_HASHES) {
+            val file = File(dir, name)
+            append(name).append(':').append(file.length()).append(':')
+                .append(file.lastModified()).append(':').append(hash).append('\n')
+        }
+    }
+
+    fun areParakeetTranscriberModelsReady(context: Context): Boolean {
+        val dir = File(parakeetTranscriberModelDir(context))
+        return isResumableSetReady(dir, parakeetSetKey(), parakeetTranscriberModels()) &&
+            runCatching { File(dir, PARAKEET_VERIFIED).readText() == parakeetFileIdentity(dir) }.getOrDefault(false)
+    }
+
+    suspend fun ensureParakeetTranscriberModels(
+        context: Context, onProgress: ((Progress) -> Unit)? = null,
+    ): String = withContext(Dispatchers.IO) {
+        synchronized(parakeetDownloadLock) {
+            val dir = File(parakeetTranscriberModelDir(context))
+            ensureResumableSet(dir, parakeetSetKey(), parakeetTranscriberModels(), onProgress)
+            if (!areParakeetTranscriberModelsReady(context)) {
+                File(dir, PARAKEET_VERIFIED).delete()
+                verifyModelChecksums(dir, PARAKEET_TRANSCRIBER_HASHES)
+                File(dir, PARAKEET_VERIFIED).writeText(parakeetFileIdentity(dir))
+            }
+            dir.absolutePath
+        }
+    }
+
+    internal fun verifyModelChecksums(dir: File, hashes: Map<String, String>) {
+        for ((name, expected) in hashes) {
+            val file = File(dir, name)
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().buffered().use { input ->
+                val bytes = ByteArray(64 * 1024)
+                while (true) {
+                    val count = input.read(bytes)
+                    if (count < 0) break
+                    digest.update(bytes, 0, count)
+                }
+            }
+            val actual = digest.digest().joinToString("") { "%02x".format(it) }
+            if (actual != expected) {
+                file.delete() // a later attempt must fetch this file again
+                throw IOException("Checksum mismatch for $name")
+            }
+        }
+    }
+
+    fun plannedParakeetTranscriberBytes(context: Context): Long = plannedResumableBytes(
+        File(parakeetTranscriberModelDir(context)), parakeetSetKey(), parakeetTranscriberModels(),
+    )
 
     /** Path to the [StreamingTranscriber] model directory, without downloading. */
     fun transcriberModelDir(
@@ -1419,6 +1495,8 @@ object ModelManager {
      * that the mis-estimate is immaterial to the bar.
      */
     private val EXPECTED_SIZES = mapOf(
+        "parakeet-encoder-int8.onnx" to 881_319_162L,
+        "parakeet-decoder-joint-int8.onnx" to 53_658_512L,
         "silero-vad.onnx" to 2_243_022L,
         "parakeet-eou-encoder.onnx" to 131_741_896L,
         "parakeet-eou-decoder.onnx" to 15_757_826L,
