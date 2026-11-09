@@ -22,3 +22,6 @@ venv/
 
 # macOS
 .DS_Store
+
+# Local Kotlin compiler state
+.kotlin/
