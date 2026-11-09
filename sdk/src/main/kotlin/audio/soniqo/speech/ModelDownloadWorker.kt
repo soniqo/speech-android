@@ -98,6 +98,7 @@ class ModelDownloadWorker(
         val includePipeline = inputData.getBoolean(KEY_INCLUDE_PIPELINE, true)
         val includeVad = inputData.getBoolean(KEY_INCLUDE_VAD, false)
         val includeTranscriber = inputData.getBoolean(KEY_INCLUDE_TRANSCRIBER, false)
+        val includeParakeetTranscriber = inputData.getBoolean(KEY_INCLUDE_PARAKEET_TRANSCRIBER, false)
         val transcriberBackend = inputData.getString(KEY_TRANSCRIBER_BACKEND)
             ?.let { runCatching { SttBackend.valueOf(it) }.getOrNull() }
             ?: SttBackend.LITERT
@@ -155,6 +156,11 @@ class ModelDownloadWorker(
                         precision = transcriberPrecision,
                         onProgress = report,
                     )
+                })
+            }
+            if (includeParakeetTranscriber) {
+                add(Phase(ModelManager.plannedParakeetTranscriberBytes(context), KEY_PARAKEET_TRANSCRIBER_MODEL_DIR) { report ->
+                    ModelManager.ensureParakeetTranscriberModels(context, onProgress = report)
                 })
             }
             if (includeDiarizer) {
@@ -404,6 +410,7 @@ class ModelDownloadWorker(
         const val KEY_INCLUDE_PIPELINE = "includePipeline"
         const val KEY_INCLUDE_VAD = "includeVad"
         const val KEY_INCLUDE_TRANSCRIBER = "includeTranscriber"
+        const val KEY_INCLUDE_PARAKEET_TRANSCRIBER = "includeParakeetTranscriber"
         const val KEY_TRANSCRIBER_BACKEND = "transcriberBackend"
         const val KEY_TRANSCRIBER_PRECISION = "transcriberPrecision"
         const val KEY_INCLUDE_DIARIZER = "includeDiarizer"
@@ -413,6 +420,7 @@ class ModelDownloadWorker(
         const val KEY_MODEL_DIR = "modelDir"
         const val KEY_VAD_MODEL_DIR = "vadModelDir"
         const val KEY_TRANSCRIBER_MODEL_DIR = "transcriberModelDir"
+        const val KEY_PARAKEET_TRANSCRIBER_MODEL_DIR = "parakeetTranscriberModelDir"
         const val KEY_DIARIZER_MODEL_DIR = "diarizerModelDir"
         const val KEY_SPEAKER_EMBEDDING_MODEL_DIR = "speakerEmbeddingModelDir"
         const val KEY_ERROR = "error"
@@ -465,8 +473,9 @@ class ModelDownloadWorker(
             includeSpeakerEmbedding: Boolean = false,
             enableEnhancer: Boolean = true,
             kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
+            includeParakeetTranscriber: Boolean = false,
         ): String {
-            val standaloneSets = includeVad || includeTranscriber ||
+            val standaloneSets = includeVad || includeTranscriber || includeParakeetTranscriber ||
                 includeDiarizer || includeSpeakerEmbedding
             if (
                 precision == ModelPrecision.INT8 &&
@@ -501,6 +510,7 @@ class ModelDownloadWorker(
                 if (includeTranscriber) {
                     append(".transcriber.${transcriberBackend.name}.${transcriberPrecision.name}")
                 }
+                if (includeParakeetTranscriber) append(".parakeetTdtV3")
                 if (includeDiarizer) append(".diarizer")
                 if (includeSpeakerEmbedding) append(".speakerEmbedding")
             }
@@ -525,6 +535,7 @@ class ModelDownloadWorker(
             includeSpeakerEmbedding: Boolean = false,
             enableEnhancer: Boolean = true,
             kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
+            includeParakeetTranscriber: Boolean = false,
         ) =
             OneTimeWorkRequestBuilder<ModelDownloadWorker>()
                 .setInputData(workDataOf(
@@ -541,6 +552,7 @@ class ModelDownloadWorker(
                     KEY_INCLUDE_PIPELINE to includePipeline,
                     KEY_INCLUDE_VAD to includeVad,
                     KEY_INCLUDE_TRANSCRIBER to includeTranscriber,
+                    KEY_INCLUDE_PARAKEET_TRANSCRIBER to includeParakeetTranscriber,
                     KEY_TRANSCRIBER_BACKEND to transcriberBackend.name,
                     KEY_TRANSCRIBER_PRECISION to transcriberPrecision.name,
                     KEY_INCLUDE_DIARIZER to includeDiarizer,
@@ -572,6 +584,7 @@ class ModelDownloadWorker(
             includeSpeakerEmbedding: Boolean = false,
             enableEnhancer: Boolean = true,
             kokoroPack: KokoroPack = KokoroPack.MULTILINGUAL,
+            includeParakeetTranscriber: Boolean = false,
         ): java.util.UUID {
             val req = request(
                 precision = precision,
@@ -591,6 +604,7 @@ class ModelDownloadWorker(
                 transcriberPrecision = transcriberPrecision,
                 includeDiarizer = includeDiarizer,
                 includeSpeakerEmbedding = includeSpeakerEmbedding,
+                includeParakeetTranscriber = includeParakeetTranscriber,
             )
             WorkManager.getInstance(context).enqueueUniqueWork(
                 uniqueName(
@@ -611,6 +625,7 @@ class ModelDownloadWorker(
                     transcriberPrecision = transcriberPrecision,
                     includeDiarizer = includeDiarizer,
                     includeSpeakerEmbedding = includeSpeakerEmbedding,
+                    includeParakeetTranscriber = includeParakeetTranscriber,
                 ),
                 ExistingWorkPolicy.KEEP, req,
             )

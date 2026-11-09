@@ -89,6 +89,7 @@ for the full model-file inventory.
 - `sdk/src/main/kotlin/audio/soniqo/speech/NativeBridge.kt` — JNI surface (must stay in lockstep with `jni_bridge.cpp`).
 - `sdk/src/main/kotlin/audio/soniqo/speech/VadDetector.kt` — VAD-only public API (Silero + speech-core `TurnDetector`, no pipeline). The listening counterpart to `SpeechSynthesizer`.
 - `sdk/src/main/kotlin/audio/soniqo/speech/{StreamingTranscriber,SpeakerDiarizer,SpeakerEmbedder}.kt` — standalone meeting-transcription models with no pipeline: a Nemotron multilingual stream, streaming Sortformer and ReDimNet2-B6. They return text, per-frame probabilities and vectors only; thresholds, turns, speaker labels and voice matching belong to the app, not this SDK.
+- `ParakeetTranscriber.kt` — standalone Parakeet TDT v3 INT8 batch API, bounded to 30 seconds per call, with decoder emission word times. Call once per app-owned utterance, never once per microphone callback. Its immutable, SHA-256-verified model cache and optional worker phase are separate from Nemotron and pipeline caches; it has no fixed-language prompt.
 - `sdk/src/main/kotlin/audio/soniqo/speech/ModelManager.kt` — model download + caching. Profiles: full pipeline (`models/`), TTS-only (`models_tts/`), VAD-only (`models_vad/`), plus the standalone `models_transcriber-*`, `models_diarizer/` and `models_speaker_embedding/` sets. `ModelManager.endpoint` overrides the download origin for every set, for a mirror the user explicitly chose.
 
 Native code that used to live here (`models/*.{cpp,h}`, `audio/{fft,mel,stft}.cpp`,

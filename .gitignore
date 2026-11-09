@@ -7,10 +7,10 @@ build/
 local.properties
 
 # ONNX Runtime (downloaded by setup.sh)
-/ort/
+/ort
 
 # LiteRT runtime (downloaded by setup.sh)
-/litert/
+/litert
 
 # Native build artifacts
 .cxx/

@@ -1116,6 +1116,56 @@ Java_audio_soniqo_speech_NativeBridge_nativeVadInSpeech(
 // ---------------------------------------------------------------------------
 
 JNIEXPORT jlong JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeCreateParakeetTranscriber(
+    JNIEnv* env, jobject /*thiz*/, jstring modelDir)
+{
+    const auto dir = jstring_to_string(env, modelDir);
+    auto h = std::make_unique<TranscriberHandle>();
+    try {
+        h->stt = std::make_unique<speech_core::ParakeetStt>(
+            dir + "/parakeet-encoder-int8.onnx",
+            dir + "/parakeet-decoder-joint-int8.onnx",
+            dir + "/vocab.json", /*hw_accel=*/false);
+    } catch (const std::exception& e) {
+        throw_native_failure(env, "Parakeet transcriber failed", e);
+        return 0;
+    }
+    return reinterpret_cast<jlong>(h.release());
+}
+
+JNIEXPORT jstring JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeParakeetTranscribe(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jfloatArray samples, jint count)
+{
+    auto* h = reinterpret_cast<TranscriberHandle*>(handle);
+    if (!h || !h->stt) return nullptr;
+    if (count < 0 || count > env->GetArrayLength(samples) || count > 30 * 16000) {
+        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"), "Invalid Parakeet sample count");
+        return nullptr;
+    }
+    float* data = env->GetFloatArrayElements(samples, nullptr);
+    if (!data) return nullptr;
+    std::string text;
+    {
+        std::lock_guard<std::mutex> lock(h->mutex);
+        try {
+            auto result = h->stt->transcribe(data, static_cast<size_t>(count), 16000);
+            text = std::move(result.text);
+            h->words = std::move(result.words);
+            h->last_confidence = result.confidence;
+        } catch (const std::exception& e) {
+            h->words.clear();
+            h->last_confidence = 0.f;
+            env->ReleaseFloatArrayElements(samples, data, JNI_ABORT);
+            throw_native_failure(env, "Parakeet transcription failed", e);
+            return nullptr;
+        }
+    }
+    env->ReleaseFloatArrayElements(samples, data, JNI_ABORT);
+    return utf8_string(env, text);
+}
+
+JNIEXPORT jlong JNICALL
 Java_audio_soniqo_speech_NativeBridge_nativeCreateTranscriber(
     JNIEnv* env, jobject /*thiz*/,
     jstring modelDir, jint sttBackend, jboolean hardwareAcceleration,
