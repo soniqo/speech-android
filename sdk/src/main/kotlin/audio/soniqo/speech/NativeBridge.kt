@@ -122,6 +122,7 @@ internal object NativeBridge {
     ): Long
     external fun nativeDestroyTranscriber(handle: Long)
     external fun nativeTranscriberSetLanguage(handle: Long, locale: String): Boolean
+    external fun nativeTranscriberSetLanguageGuide(handle: Long, locales: Array<String>, weight: Float)
     external fun nativeTranscriberBegin(handle: Long)
     // Returns the open stream's text so far, not only this chunk's.
     external fun nativeTranscriberPush(handle: Long, samples: FloatArray, count: Int): String?

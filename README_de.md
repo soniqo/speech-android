@@ -98,7 +98,7 @@ Lade das [signierte APK](https://github.com/soniqo/speech-android/releases/lates
 
 ```kotlin
 dependencies {
-    implementation("audio.soniqo:speech:0.0.27")
+    implementation("audio.soniqo:speech:0.0.28")
 }
 ```
 
