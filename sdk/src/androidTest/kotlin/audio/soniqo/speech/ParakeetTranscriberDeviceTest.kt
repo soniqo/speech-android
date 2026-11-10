@@ -50,6 +50,21 @@ class ParakeetTranscriberDeviceTest {
         assertThrows(IllegalStateException::class.java) { model.transcribe(samples) }
     }
 
+    @Test fun releasingUnusedPagesPreservesThePreparedModelAndItsWordTimes() {
+        val samples = MeetingFixtures.read("transcriber_en.wav")
+        ParakeetTranscriber(modelDir).use { model ->
+            val expected = model.transcribe(samples)
+            repeat(3) {
+                val supported = SpeechMemory.releaseUnused()
+                if (android.os.Build.VERSION.SDK_INT >= 28) assertTrue(supported)
+                val actual = model.transcribe(samples)
+                assertEquals(expected.text, actual.text)
+                assertEquals(expected.words, actual.words)
+            }
+        }
+        repeat(2) { SpeechMemory.releaseUnused() }
+    }
+
     @Test fun incompleteBundlesReleaseSessionsAndAllowAHealthyRetry() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         for (missing in listOf("parakeet-decoder-joint-int8.onnx", "vocab.json")) {

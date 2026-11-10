@@ -98,7 +98,7 @@ Téléchargez l'[APK signé](https://github.com/soniqo/speech-android/releases/l
 
 ```kotlin
 dependencies {
-    implementation("audio.soniqo:speech:0.0.26")
+    implementation("audio.soniqo:speech:0.0.27")
 }
 ```
 
@@ -432,3 +432,11 @@ Pour les plateformes automobiles Qualcomm SA8295P / SA8255P avec QNN (Hexagon DS
 ## Licence
 
 Apache 2.0
+
+### Libération de mémoire native
+
+Après la fin des files d’inférence ou la fermeture des modèles, appelez cette méthode sur un thread de travail pour rendre à Android les pages natives inutilisées. Les modèles préparés restent chargés. Le résultat indique la prise en charge par l’allocateur, sans garantir une réduction précise.
+
+```kotlin
+val supported = SpeechMemory.releaseUnused()
+```

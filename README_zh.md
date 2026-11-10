@@ -98,7 +98,7 @@ Kokoro 与 Supertonic 都支持在直接合成时按调用指定音色预设 —
 
 ```kotlin
 dependencies {
-    implementation("audio.soniqo:speech:0.0.26")
+    implementation("audio.soniqo:speech:0.0.27")
 }
 ```
 
@@ -416,3 +416,11 @@ Idle → Listening → Transcribing → Speaking → Idle
 ## 许可证
 
 Apache 2.0
+
+### 原生内存回收
+
+推理队列处理完毕或模型关闭后，可在工作线程上调用此方法，将未使用的原生内存页归还给 Android。已准备的模型保持加载状态。返回值表示分配器是否支持此请求，不保证特定的内存降幅。
+
+```kotlin
+val supported = SpeechMemory.releaseUnused()
+```

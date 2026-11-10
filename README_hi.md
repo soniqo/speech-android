@@ -98,7 +98,7 @@ Kokoro और Supertonic दोनों डायरेक्ट सिंथ�
 
 ```kotlin
 dependencies {
-    implementation("audio.soniqo:speech:0.0.26")
+    implementation("audio.soniqo:speech:0.0.27")
 }
 ```
 
@@ -426,3 +426,11 @@ Idle → Listening → Transcribing → Speaking → Idle
 ## लाइसेंस
 
 Apache 2.0
+
+### नेटिव मेमोरी वापस करना
+
+इन्फ़रेंस कतारें पूरी होने या मॉडल बंद होने के बाद, यह कॉल वर्कर थ्रेड पर करें। इससे इस्तेमाल में न आने वाले नेटिव मेमोरी पेज Android को वापस मिलते हैं। तैयार मॉडल लोड रहते हैं। लौटाया गया मान एलोकेटर के समर्थन को बताता है; किसी निश्चित मेमोरी कमी की गारंटी नहीं देता।
+
+```kotlin
+val supported = SpeechMemory.releaseUnused()
+```

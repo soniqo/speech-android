@@ -98,7 +98,7 @@ Kokoro と Supertonic はどちらも、直接合成の呼び出しごとに音�
 
 ```kotlin
 dependencies {
-    implementation("audio.soniqo:speech:0.0.26")
+    implementation("audio.soniqo:speech:0.0.27")
 }
 ```
 
@@ -432,3 +432,11 @@ Idle → Listening → Transcribing → Speaking → Idle
 ## ライセンス
 
 Apache 2.0
+
+### ネイティブメモリの回収
+
+推論キューの処理完了後、またはモデルを閉じた後に、ワーカースレッドから呼び出すと、未使用のネイティブメモリページを Android に返します。準備済みモデルは読み込まれたままです。戻り値はアロケータの対応状況を表し、削減量を保証するものではありません。
+
+```kotlin
+val supported = SpeechMemory.releaseUnused()
+```

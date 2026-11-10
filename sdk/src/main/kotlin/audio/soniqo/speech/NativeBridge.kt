@@ -1,6 +1,7 @@
 package audio.soniqo.speech
 
 internal object NativeBridge {
+    external fun nativeReleaseUnusedMemory(): Boolean
 
     external fun nativeCreateVap(modelDir: String, hardwareAcceleration: Boolean): Long
     external fun nativeDestroyVap(handle: Long)
