@@ -1244,6 +1244,31 @@ Java_audio_soniqo_speech_NativeBridge_nativeTranscriberSetLanguage(
 }
 
 JNIEXPORT void JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeTranscriberSetLanguageGuide(
+    JNIEnv* env, jobject, jlong handle, jobjectArray locales, jfloat weight)
+{
+    auto* h = reinterpret_cast<TranscriberHandle*>(handle);
+    if (!h || !h->stt) return;
+    std::lock_guard<std::mutex> lock(h->mutex);
+    try {
+        if (h->open) throw std::invalid_argument("Set the language guide before beginStream");
+        std::vector<std::string> expected;
+        const jsize count = locales ? env->GetArrayLength(locales) : 0;
+        for (jsize i = 0; i < count; ++i) {
+            auto value = static_cast<jstring>(env->GetObjectArrayElement(locales, i));
+            expected.push_back(jstring_to_string(env, value));
+            env->DeleteLocalRef(value);
+        }
+#ifdef SPEECH_ANDROID_WITH_LITERT
+        if (h->litert) { h->litert->set_language_guide(expected, weight); return; }
+#endif
+        if (h->onnx) h->onnx->set_language_guide(expected, weight);
+    } catch (const std::exception& error) {
+        throw_native_failure(env, "Language guide failed", error);
+    }
+}
+
+JNIEXPORT void JNICALL
 Java_audio_soniqo_speech_NativeBridge_nativeTranscriberBegin(
     JNIEnv* env, jobject /*thiz*/, jlong handle)
 {

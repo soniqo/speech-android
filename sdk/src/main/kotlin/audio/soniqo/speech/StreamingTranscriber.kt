@@ -23,7 +23,29 @@ data class TranscriberConfig(
 
     /** Try a hardware delegate for the encoder. CPU is the measured default. */
     val hardwareAcceleration: Boolean = false,
+
+    /** Optional experimental soft guide, used only with the automatic prompt. */
+    val languageGuide: LanguageGuideConfig? = null,
 )
+
+/** Fractional prompt conditioning: Auto keeps 90% at the default weight.
+ * Other languages remain possible. This is not calibrated language confidence
+ * or a vocabulary restriction. The list is copied at construction. */
+class LanguageGuideConfig(
+    expectedLanguages: List<String>,
+    val expectedLanguageWeight: Float = 0.1f,
+) {
+    val expectedLanguages: List<String> = expectedLanguages.toList()
+
+    init {
+        require(expectedLanguageWeight.isFinite() && expectedLanguageWeight in 0f..0.1f) {
+            "Language-guide weight must be finite and between 0 and 0.1"
+        }
+        require(this.expectedLanguages.all { it.matches(Regex("[a-z]{2,3}-[A-Z]{2}")) }) {
+            "Language guide requires exact locale tags, such as en-US, ru-RU or zh-CN"
+        }
+    }
+}
 
 /** One recognised word and its position in the stream, in seconds. */
 data class TimedToken(val text: String, val startSec: Float, val endSec: Float)
@@ -81,10 +103,16 @@ interface StreamingTranscriber : AutoCloseable {
      *
      * Resolves as speech-swift does: the tag as written, `_` read as `-`, then
      * the bare language ("fr" for "fr-XX"). "auto" selects the automatic
-     * prompt. Returns false when nothing matches, and the model is then left
+     * prompt. Every call clears the experimental language guide.
+     * Returns false when nothing matches, and the model is then left
      * on the automatic prompt.
      */
     fun setLanguage(locale: String): Boolean
+
+    /** Set before [beginStream]. Null/empty clears the guide. Exact locales
+     * must exist in the loaded vocabulary and prompt table. [setLanguage]
+     * clears any previous guide, including when selecting Auto again. */
+    fun setLanguageGuide(guide: LanguageGuideConfig?)
 
     /** Open a new stream, discarding any open one. [pushAudio] opens one by
      *  itself when none is open. */
@@ -126,6 +154,9 @@ internal fun TranscriberConfig.requireValidConfiguration() {
             "Chinese language tag. Use 'zh-CN' for Simplified Chinese or " +
             "'zh-TW' for Traditional Chinese."
     }
+    require(languageGuide?.expectedLanguages.isNullOrEmpty() || language.trim() in listOf("", "auto")) {
+        "A language guide requires automatic-language recognition"
+    }
 }
 
 /** JNI reads `count` elements without a bounds check of its own. */
@@ -146,11 +177,27 @@ internal class StreamingTranscriberImpl(config: TranscriberConfig) : StreamingTr
         if (h == 0L) throw IllegalStateException("Failed to create the native transcriber")
     }
 
+    init {
+        try {
+            config.languageGuide?.let(::setLanguageGuide)
+        } catch (error: Throwable) {
+            close()
+            throw error
+        }
+    }
+
     override val sampleRate: Int = SAMPLE_RATE
 
     @Synchronized
     override fun setLanguage(locale: String): Boolean =
         NativeBridge.nativeTranscriberSetLanguage(open(), locale.trim())
+
+    @Synchronized
+    override fun setLanguageGuide(guide: LanguageGuideConfig?) =
+        NativeBridge.nativeTranscriberSetLanguageGuide(
+            open(), guide?.expectedLanguages.orEmpty().toTypedArray(),
+            guide?.expectedLanguageWeight ?: 0.1f,
+        )
 
     @Synchronized
     override fun beginStream() {
