@@ -98,7 +98,7 @@ Kokoro와 Supertonic 모두 직접 합성 시 호출 단위로 음성 프리셋�
 
 ```kotlin
 dependencies {
-    implementation("audio.soniqo:speech:0.0.26")
+    implementation("audio.soniqo:speech:0.0.27")
 }
 ```
 
@@ -425,3 +425,11 @@ C-vtable 어댑터 보일러플레이트가 없습니다.
 ## 라이선스
 
 Apache 2.0
+
+### 네이티브 메모리 회수
+
+추론 큐가 모두 처리되거나 모델을 닫은 후 작업 스레드에서 호출하면 사용하지 않는 네이티브 메모리 페이지를 Android에 반환합니다. 준비된 모델은 로드된 상태를 유지합니다. 반환값은 할당기의 지원 여부를 나타내며 특정 메모리 감소량을 보장하지 않습니다.
+
+```kotlin
+val supported = SpeechMemory.releaseUnused()
+```

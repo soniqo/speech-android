@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <android/log.h>
+#include <malloc.h>
 
 #include <speech_core/models/deepfilter.h>
 #include <speech_core/models/kokoro_tts.h>
@@ -431,6 +432,13 @@ static bool resolve_transcriber_language(TranscriberHandle& h, const std::string
 }
 
 extern "C" {
+
+JNIEXPORT jboolean JNICALL
+Java_audio_soniqo_speech_NativeBridge_nativeReleaseUnusedMemory(JNIEnv*, jobject) {
+    // M_PURGE is available from API 28; older allocators reject the option.
+    // Unlike M_DECAY_TIME, it makes no persistent process-wide policy change.
+    return mallopt(M_PURGE, 0) == 1 ? JNI_TRUE : JNI_FALSE;
+}
 
 JNIEXPORT jlong JNICALL
 Java_audio_soniqo_speech_NativeBridge_nativeCreate(

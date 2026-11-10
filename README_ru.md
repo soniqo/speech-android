@@ -98,7 +98,7 @@ Kokoro и Supertonic принимают пресет голоса на кажд�
 
 ```kotlin
 dependencies {
-    implementation("audio.soniqo:speech:0.0.26")
+    implementation("audio.soniqo:speech:0.0.27")
 }
 ```
 
@@ -435,3 +435,11 @@ JNI-мост создаёт их и передаёт ссылки в `VoicePipel
 ## Лицензия
 
 Apache 2.0
+
+### Освобождение native-памяти
+
+После завершения очередей инференса или закрытия моделей вызовите метод на рабочем потоке, чтобы вернуть Android неиспользуемые native-страницы. Подготовленные модели остаются загруженными. Результат сообщает о поддержке операции allocator, не гарантируя конкретного уменьшения памяти.
+
+```kotlin
+val supported = SpeechMemory.releaseUnused()
+```
