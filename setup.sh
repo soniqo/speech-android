@@ -34,19 +34,22 @@ if [ -f "${ORT_DIR}/version.txt" ]; then
     ORT_INSTALLED_VERSION="$(cat "${ORT_DIR}/version.txt")"
 fi
 
-if [ ! -f "${ORT_DIR}/include/onnxruntime_c_api.h" ] || \
-   [ ! -f "${ORT_DIR}/include/onnxruntime_ep_c_api.h" ] || \
-   [ "${ORT_INSTALLED_VERSION}" != "${ORT_VERSION}" ]; then
+ort_headers_ready() {
+    grep -qs '^#define ORT_API_VERSION ' "${ORT_DIR}/include/onnxruntime_c_api.h" &&
+        grep -qs '^struct OrtEpApi {' "${ORT_DIR}/include/onnxruntime_ep_c_api.h"
+}
+
+if [ "${ORT_INSTALLED_VERSION}" != "${ORT_VERSION}" ] || ! ort_headers_ready; then
     echo "Downloading ONNX Runtime ${ORT_VERSION}..."
     rm -rf "$ORT_DIR"
 
     TMP_DIR=$(mktemp -d)
     AAR_FILE="${TMP_DIR}/onnxruntime.aar"
 
-    curl -L -o "$AAR_FILE" "$ORT_URL"
+    curl --fail --location --output "$AAR_FILE" "$ORT_URL"
 
     echo "Extracting..."
-    mkdir -p "$ORT_DIR"
+    mkdir -p "${ORT_DIR}/include"
 
     # AAR is a ZIP — extract native libs and headers
     cd "$TMP_DIR"
@@ -55,21 +58,23 @@ if [ ! -f "${ORT_DIR}/include/onnxruntime_c_api.h" ] || \
     # Headers (from the AAR's headers/ directory or from GitHub release)
     # The AAR bundles headers under headers/
     if [ -d "headers" ]; then
-        cp -r headers/* "${ORT_DIR}/include/" 2>/dev/null || true
+        cp -R headers/. "${ORT_DIR}/include/"
     fi
 
     # If headers aren't in AAR, download them separately. Newer ORT C headers
     # include companion headers from the same directory.
-    if [ ! -f "${ORT_DIR}/include/onnxruntime_c_api.h" ] || \
-       [ ! -f "${ORT_DIR}/include/onnxruntime_ep_c_api.h" ]; then
-        mkdir -p "${ORT_DIR}/include"
+    if ! ort_headers_ready; then
         for header in \
             onnxruntime_c_api.h \
             onnxruntime_ep_c_api.h \
             onnxruntime_float16.h; do
             HEADER_URL="https://raw.githubusercontent.com/microsoft/onnxruntime/v${ORT_VERSION}/include/onnxruntime/core/session/${header}"
-            curl -L -o "${ORT_DIR}/include/${header}" "$HEADER_URL"
+            curl --fail --location --output "${ORT_DIR}/include/${header}" "$HEADER_URL"
         done
+    fi
+    if ! ort_headers_ready; then
+        echo "ERROR: invalid ONNX Runtime ${ORT_VERSION} headers" >&2
+        exit 1
     fi
 
     # Native shared libraries
