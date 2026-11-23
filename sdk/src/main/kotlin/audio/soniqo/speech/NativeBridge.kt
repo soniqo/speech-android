@@ -3,11 +3,6 @@ package audio.soniqo.speech
 internal object NativeBridge {
     external fun nativeReleaseUnusedMemory(): Boolean
 
-    external fun nativeCreateVap(modelDir: String, hardwareAcceleration: Boolean): Long
-    external fun nativeDestroyVap(handle: Long)
-    external fun nativeVapForecast(handle: Long, userAudio: FloatArray, agentAudio: FloatArray,
-        count: Int, sampleRate: Int): FloatArray?
-
     external fun nativeCreateKeywordSpotter(modelDir: String, phrases: Array<String>, tokens: Array<IntArray>,
         thresholds: FloatArray, boosts: FloatArray, beamSize: Int): Long
     external fun nativeDestroyKeywordSpotter(handle: Long)
